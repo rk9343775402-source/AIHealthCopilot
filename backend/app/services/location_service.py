@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import errno
 import logging
 import math
+import socket
+import ssl
 from typing import Any
 
 import httpx
@@ -11,6 +14,50 @@ logger = logging.getLogger(__name__)
 
 class LocationSearchError(RuntimeError):
     pass
+
+
+def _connect_error_details(
+    error: httpx.ConnectError,
+) -> tuple[str | None, int | None, str, str]:
+    causes: list[BaseException] = []
+    cause = error.__cause__ or error.__context__
+    while cause is not None and cause not in causes:
+        causes.append(cause)
+        cause = cause.__cause__ or cause.__context__
+
+    cause_type = type(causes[-1]).__name__ if causes else None
+    cause_errno = next(
+        (
+            candidate.errno
+            for candidate in reversed(causes)
+            if isinstance(getattr(candidate, "errno", None), int)
+            and not isinstance(candidate.errno, bool)
+        ),
+        None,
+    )
+    cause_names = {type(candidate).__name__.casefold() for candidate in causes}
+
+    if any("proxy" in name for name in cause_names):
+        return cause_type, cause_errno, "proxy", "proxy_connection_failure"
+    if any(isinstance(candidate, ssl.SSLError) for candidate in causes):
+        return cause_type, cause_errno, "tls", "tls_connection_failure"
+    if any(isinstance(candidate, socket.gaierror) for candidate in causes):
+        return cause_type, cause_errno, "dns", "dns_resolution_failure"
+    if any(
+        isinstance(candidate, ConnectionRefusedError)
+        or getattr(candidate, "errno", None) == errno.ECONNREFUSED
+        for candidate in causes
+    ):
+        return cause_type, cause_errno, "tcp", "tcp_connection_refused"
+    if any(
+        isinstance(candidate, TimeoutError)
+        or getattr(candidate, "errno", None) == errno.ETIMEDOUT
+        for candidate in causes
+    ):
+        return cause_type, cause_errno, "tcp", "tcp_connection_timeout"
+    if any(isinstance(candidate, OSError) for candidate in causes):
+        return cause_type, cause_errno, "tcp", "tcp_connection_failure"
+    return cause_type, cause_errno, "connect", "other_connection_failure"
 
 
 class LocationService:
@@ -54,12 +101,27 @@ class LocationService:
                 safe_error = "upstream response JSON could not be decoded"
             else:
                 safe_error = "upstream HTTP client error"
-            logger.warning(
-                "Nearby-care lookup failed: exception_type=%s upstream_status=%s error=%s",
-                type(exc).__name__,
-                upstream_status if upstream_status is not None else "unavailable",
-                safe_error,
-            )
+            if isinstance(exc, httpx.ConnectError):
+                cause_type, cause_errno, connection_phase, safe_error = (
+                    _connect_error_details(exc)
+                )
+                logger.warning(
+                    "Nearby-care lookup failed: exception_type=%s cause_type=%s "
+                    "cause_errno=%s connection_phase=%s upstream_status=%s error=%s",
+                    type(exc).__name__,
+                    cause_type or "unavailable",
+                    cause_errno if cause_errno is not None else "unavailable",
+                    connection_phase,
+                    upstream_status if upstream_status is not None else "unavailable",
+                    safe_error,
+                )
+            else:
+                logger.warning(
+                    "Nearby-care lookup failed: exception_type=%s upstream_status=%s error=%s",
+                    type(exc).__name__,
+                    upstream_status if upstream_status is not None else "unavailable",
+                    safe_error,
+                )
             raise LocationSearchError("Nearby healthcare search is temporarily unavailable.") from exc
 
         places = []
