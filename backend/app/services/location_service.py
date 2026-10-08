@@ -18,46 +18,75 @@ class LocationSearchError(RuntimeError):
 
 def _connect_error_details(
     error: httpx.ConnectError,
-) -> tuple[str | None, int | None, str, str]:
+) -> tuple[str | None, int | None, str, str, str | None]:
     causes: list[BaseException] = []
-    cause = error.__cause__ or error.__context__
-    while cause is not None and cause not in causes:
+    pending = [error.__context__, error.__cause__]
+    seen: set[int] = {id(error)}
+    while pending:
+        cause = pending.pop()
+        if cause is None or id(cause) in seen:
+            continue
+        seen.add(id(cause))
         causes.append(cause)
-        cause = cause.__cause__ or cause.__context__
 
-    cause_type = type(causes[-1]).__name__ if causes else None
-    cause_errno = next(
+        chained_causes = [cause.__cause__, cause.__context__]
+        if isinstance(cause, BaseExceptionGroup):
+            chained_causes.extend(cause.exceptions)
+        pending.extend(reversed(chained_causes))
+
+    cause_types = ",".join(dict.fromkeys(type(cause).__name__ for cause in causes)) or None
+    classifications = (
         (
-            candidate.errno
-            for candidate in reversed(causes)
-            if isinstance(getattr(candidate, "errno", None), int)
-            and not isinstance(candidate.errno, bool)
+            lambda candidate: "proxy" in type(candidate).__name__.casefold(),
+            "proxy",
+            "proxy_connection_failure",
         ),
-        None,
+        (
+            lambda candidate: isinstance(candidate, ssl.SSLError),
+            "tls",
+            "tls_connection_failure",
+        ),
+        (
+            lambda candidate: isinstance(candidate, socket.gaierror),
+            "dns",
+            "dns_resolution_failure",
+        ),
+        (
+            lambda candidate: isinstance(candidate, ConnectionRefusedError)
+            or getattr(candidate, "errno", None) == errno.ECONNREFUSED,
+            "tcp",
+            "tcp_connection_refused",
+        ),
+        (
+            lambda candidate: isinstance(candidate, TimeoutError)
+            or getattr(candidate, "errno", None) == errno.ETIMEDOUT,
+            "tcp",
+            "tcp_connection_timeout",
+        ),
+        (
+            lambda candidate: isinstance(candidate, OSError),
+            "tcp",
+            "tcp_connection_failure",
+        ),
     )
-    cause_names = {type(candidate).__name__.casefold() for candidate in causes}
-
-    if any("proxy" in name for name in cause_names):
-        return cause_type, cause_errno, "proxy", "proxy_connection_failure"
-    if any(isinstance(candidate, ssl.SSLError) for candidate in causes):
-        return cause_type, cause_errno, "tls", "tls_connection_failure"
-    if any(isinstance(candidate, socket.gaierror) for candidate in causes):
-        return cause_type, cause_errno, "dns", "dns_resolution_failure"
-    if any(
-        isinstance(candidate, ConnectionRefusedError)
-        or getattr(candidate, "errno", None) == errno.ECONNREFUSED
-        for candidate in causes
-    ):
-        return cause_type, cause_errno, "tcp", "tcp_connection_refused"
-    if any(
-        isinstance(candidate, TimeoutError)
-        or getattr(candidate, "errno", None) == errno.ETIMEDOUT
-        for candidate in causes
-    ):
-        return cause_type, cause_errno, "tcp", "tcp_connection_timeout"
-    if any(isinstance(candidate, OSError) for candidate in causes):
-        return cause_type, cause_errno, "tcp", "tcp_connection_failure"
-    return cause_type, cause_errno, "connect", "other_connection_failure"
+    for matches, connection_phase, safe_error in classifications:
+        matching_cause = next(
+            (candidate for candidate in reversed(causes) if matches(candidate)),
+            None,
+        )
+        if matching_cause is not None:
+            cause_errno = getattr(matching_cause, "errno", None)
+            if not isinstance(cause_errno, int) or isinstance(cause_errno, bool):
+                cause_errno = None
+            return (
+                type(matching_cause).__name__,
+                cause_errno,
+                connection_phase,
+                safe_error,
+                cause_types,
+            )
+    cause_type = type(causes[-1]).__name__ if causes else None
+    return cause_type, None, "connect", "other_connection_failure", cause_types
 
 
 class LocationService:
@@ -102,14 +131,20 @@ class LocationService:
             else:
                 safe_error = "upstream HTTP client error"
             if isinstance(exc, httpx.ConnectError):
-                cause_type, cause_errno, connection_phase, safe_error = (
-                    _connect_error_details(exc)
-                )
+                (
+                    cause_type,
+                    cause_errno,
+                    connection_phase,
+                    safe_error,
+                    cause_types,
+                ) = _connect_error_details(exc)
                 logger.warning(
                     "Nearby-care lookup failed: exception_type=%s cause_type=%s "
+                    "cause_types=%s "
                     "cause_errno=%s connection_phase=%s upstream_status=%s error=%s",
                     type(exc).__name__,
                     cause_type or "unavailable",
+                    cause_types or "unavailable",
                     cause_errno if cause_errno is not None else "unavailable",
                     connection_phase,
                     upstream_status if upstream_status is not None else "unavailable",
