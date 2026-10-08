@@ -28,7 +28,7 @@ services:
       OMNIROUTE_MODEL: ${OMNIROUTE_MODEL:-gpt-4o-mini}
       UPLOAD_DIR: /app/data/uploads
       DEMO_MODE: ${DEMO_MODE:-false}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,https://aihealthcopilot.onrender.com}
     ports:
       - "8000:8000"
     volumes:

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class LocationSearchError(RuntimeError):
@@ -36,6 +39,27 @@ class LocationService:
                 response.raise_for_status()
                 elements = response.json().get("elements", [])
         except (httpx.HTTPError, ValueError) as exc:
+            upstream_status = (
+                exc.response.status_code
+                if isinstance(exc, httpx.HTTPStatusError)
+                else None
+            )
+            if isinstance(exc, httpx.HTTPStatusError):
+                safe_error = exc.response.reason_phrase or "upstream HTTP error"
+            elif isinstance(exc, httpx.TimeoutException):
+                safe_error = "upstream request timed out"
+            elif isinstance(exc, httpx.ConnectError):
+                safe_error = "upstream connection failed"
+            elif isinstance(exc, ValueError):
+                safe_error = "upstream response JSON could not be decoded"
+            else:
+                safe_error = "upstream HTTP client error"
+            logger.warning(
+                "Nearby-care lookup failed: exception_type=%s upstream_status=%s error=%s",
+                type(exc).__name__,
+                upstream_status if upstream_status is not None else "unavailable",
+                safe_error,
+            )
             raise LocationSearchError("Nearby healthcare search is temporarily unavailable.") from exc
 
         places = []

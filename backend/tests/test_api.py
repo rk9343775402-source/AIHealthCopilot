@@ -1,5 +1,8 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
+from app.core.config import Settings
 from app.main import app
 
 client = TestClient(app)
@@ -9,6 +12,37 @@ def test_root():
     response = client.get("/")
     assert response.status_code == 200
     assert "AI Personal Health Copilot" in response.json()["app"]
+
+
+def test_cors_allows_production_frontend_and_local_development_origin():
+    test_settings = Settings(database_url="sqlite://", _env_file=None)
+    cors_app = FastAPI()
+    cors_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            origin.strip()
+            for origin in test_settings.allowed_origins.split(",")
+            if origin.strip()
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    test_client = TestClient(cors_app)
+
+    for origin in (
+        "https://aihealthcopilot.onrender.com",
+        "http://localhost:5173",
+    ):
+        response = test_client.options(
+            "/cors-probe",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == origin
 
 
 def test_create_user_and_profile():
