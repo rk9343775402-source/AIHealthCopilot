@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -202,33 +203,55 @@ def confirm_document_results(
     if any(index < 0 or index >= len(candidates) for index in payload.candidate_indices):
         raise HTTPException(status_code=422, detail="A selected extraction candidate does not exist")
     selected = [candidates[index] for index in dict.fromkeys(payload.candidate_indices)]
-    for item in selected:
-        lab = LabResult(
-            user_id=document.user_id,
-            source_document_id=document.id,
-            test_name=item["name"],
-            value=item.get("value"),
-            unit=item.get("unit"),
-            reference_range=item.get("reference_range"),
-            status=item.get("status", "unknown"),
-            test_date=document.source_date or date.today(),
-        )
-        db.add(lab)
-    document.status = "confirmed"
-    db.add(document)
-    db.add(
-        HealthTimeline(
-            user_id=document.user_id,
-            event_type="medical_document_confirmed",
-            title=document.title,
-            description=f"User confirmed {len(selected)} extracted laboratory result(s) from {document.document_type}.",
-            event_date=event_datetime(document.source_date),
-            metadata_json=json.dumps({"document_id": document.id, "status": "confirmed", "result_count": len(selected)}),
-        )
-    )
+    document_id = document.id
+    document_user_id = document.user_id
+    document_title = document.title
+    document_type = document.document_type
+    source_date = document.source_date
     db.commit()
+    claim = db.execute(
+        update(MedicalDocument)
+        .where(
+            MedicalDocument.id == document_id,
+            MedicalDocument.user_id == document_user_id,
+            MedicalDocument.status == "needs_review",
+        )
+        .values(status="confirmed")
+        .execution_options(synchronize_session=False)
+    )
+    if claim.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This document's results have already been confirmed")
+
+    try:
+        for item in selected:
+            lab = LabResult(
+                user_id=document_user_id,
+                source_document_id=document_id,
+                test_name=item["name"],
+                value=item.get("value"),
+                unit=item.get("unit"),
+                reference_range=item.get("reference_range"),
+                status=item.get("status", "unknown"),
+                test_date=source_date or date.today(),
+            )
+            db.add(lab)
+        db.add(
+            HealthTimeline(
+                user_id=document_user_id,
+                event_type="medical_document_confirmed",
+                title=document_title,
+                description=f"User confirmed {len(selected)} extracted laboratory result(s) from {document_type}.",
+                event_date=event_datetime(source_date),
+                metadata_json=json.dumps({"document_id": document_id, "status": "confirmed", "result_count": len(selected)}),
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {
-        "document_id": document.id,
-        "status": document.status,
+        "document_id": document_id,
+        "status": "confirmed",
         "confirmed_results": selected,
     }

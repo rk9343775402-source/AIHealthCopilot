@@ -1,10 +1,19 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
+import pytest
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
+from app.api.routes import medical_documents
 from app.core.config import Settings
+from app.database.base import Base
 from app.database.session import _normalize_database_url
 from app.main import app
+from app.models.health import LabResult, MedicalDocument, User
+from app.schemas.health import MedicalDocumentConfirmation
 from app.services.ocr_service import OCRService
 
 client = TestClient(app)
@@ -14,6 +23,47 @@ def create_user(name="Workflow User"):
     response = client.post("/api/users", json={"name": name})
     assert response.status_code == 200
     return response.json()
+
+
+@pytest.fixture
+def confirmation_database(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'confirmation.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+
+    def override_get_db():
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[medical_documents.get_db] = override_get_db
+    try:
+        yield session_factory, engine
+    finally:
+        app.dependency_overrides.pop(medical_documents.get_db, None)
+        engine.dispose()
+
+
+def create_confirmation_document(session_factory, name="Confirmation User"):
+    with session_factory() as db:
+        user = User(name=name)
+        db.add(user)
+        db.flush()
+        document = MedicalDocument(
+            user_id=user.id,
+            title="Lab report",
+            document_type="laboratory",
+            status="needs_review",
+            ocr_text="Hemoglobin: 11.2 g/dL (12.0-16.0)",
+        )
+        db.add(document)
+        db.commit()
+        return user.id, document.id
 
 
 def test_ocr_extracts_values_and_flags_only_explicit_reference_ranges():
@@ -138,6 +188,105 @@ def test_document_analysis_requires_explicit_result_confirmation():
         f"/api/medical-documents/{document_id}/confirm",
         json={"user_id": user["id"], "candidate_indices": [0]},
     ).status_code == 409
+    assert len(client.get(f"/api/lab-results/{user['id']}").json()["items"]) == 2
+
+
+def test_concurrent_document_confirmations_create_only_one_batch(confirmation_database, monkeypatch):
+    session_factory, _engine = confirmation_database
+    user_id, document_id = create_confirmation_document(session_factory)
+    extraction_barrier = Barrier(2)
+    original_extract = OCRService.extract_lab_candidates
+
+    def wait_for_both_confirmations(cls, text):
+        extraction_barrier.wait(timeout=10)
+        return original_extract(text)
+
+    monkeypatch.setattr(
+        OCRService,
+        "extract_lab_candidates",
+        classmethod(wait_for_both_confirmations),
+    )
+
+    def confirm():
+        return client.post(
+            f"/api/medical-documents/{document_id}/confirm",
+            json={"user_id": user_id, "candidate_indices": [0]},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _index: confirm(), range(2)))
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    with session_factory() as db:
+        document = db.get(MedicalDocument, document_id)
+        results = db.query(LabResult).filter_by(source_document_id=document_id).all()
+        assert document.status == "confirmed"
+        assert len(results) == 1
+
+
+def test_failed_lab_insert_rolls_back_document_confirmation(confirmation_database):
+    session_factory, engine = confirmation_database
+    user_id, document_id = create_confirmation_document(session_factory)
+
+    def fail_lab_insert(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("INSERT INTO LAB_RESULTS"):
+            raise RuntimeError("simulated lab insert failure")
+
+    event.listen(engine, "before_cursor_execute", fail_lab_insert)
+    try:
+        with pytest.raises(RuntimeError, match="simulated lab insert failure"):
+            client.post(
+                f"/api/medical-documents/{document_id}/confirm",
+                json={"user_id": user_id, "candidate_indices": [0]},
+            )
+    finally:
+        event.remove(engine, "before_cursor_execute", fail_lab_insert)
+
+    with session_factory() as db:
+        document = db.get(MedicalDocument, document_id)
+        results = db.query(LabResult).filter_by(source_document_id=document_id).all()
+        assert document.status == "needs_review"
+        assert results == []
+
+
+def test_separate_documents_can_save_legitimate_repeated_lab_measurements(confirmation_database):
+    session_factory, _engine = confirmation_database
+    user_id, first_document_id = create_confirmation_document(session_factory)
+    with session_factory() as db:
+        second_document = MedicalDocument(
+            user_id=user_id,
+            title="Repeat lab report",
+            document_type="laboratory",
+            status="needs_review",
+            ocr_text="Hemoglobin: 11.2 g/dL (12.0-16.0)",
+        )
+        db.add(second_document)
+        db.commit()
+        second_document_id = second_document.id
+
+    for document_id in (first_document_id, second_document_id):
+        response = client.post(
+            f"/api/medical-documents/{document_id}/confirm",
+            json={"user_id": user_id, "candidate_indices": [0]},
+        )
+        assert response.status_code == 200
+
+    with session_factory() as db:
+        results = (
+            db.query(LabResult)
+            .filter(LabResult.user_id == user_id)
+            .order_by(LabResult.source_document_id)
+            .all()
+        )
+        assert len(results) == 2
+        assert {result.source_document_id for result in results} == {
+            first_document_id,
+            second_document_id,
+        }
+        assert [(result.test_name, result.value) for result in results] == [
+            ("Hemoglobin", 11.2),
+            ("Hemoglobin", 11.2),
+        ]
 
 
 def test_uploaded_pdf_analysis_extracts_abnormal_values_from_ocr_style_lab_rows(
