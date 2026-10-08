@@ -3,6 +3,7 @@ import json
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.database.session import _normalize_database_url
 from app.main import app
 from app.services.ocr_service import OCRService
 
@@ -357,6 +358,21 @@ def test_database_url_must_be_configured(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_postgresql_database_urls_use_psycopg3_driver():
+    urls = [
+        "postgres://user:password@localhost:5432/app",
+        "postgresql://user:password@localhost:5432/app",
+        "postgresql+psycopg://user:password@localhost:5432/app",
+    ]
+    normalized = [_normalize_database_url(value) for value in urls]
+
+    assert [url.drivername for url in normalized] == [
+        "postgresql+psycopg",
+        "postgresql+psycopg",
+        "postgresql+psycopg",
+    ]
 
 
 def test_unconfigured_image_recognition_does_not_guess_a_medicine():
