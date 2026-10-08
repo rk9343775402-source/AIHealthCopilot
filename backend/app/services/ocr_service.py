@@ -57,13 +57,24 @@ class OCRService:
         if not text:
             return ""
         text = text.replace("\r\n", "\n").replace("\r", "\n")
+        for mojibake, separator in (
+            ("â€“", "-"),
+            ("â€”", "-"),
+            ("â\u0080\u0093", "-"),
+            ("â\u0080\u0094", "-"),
+            ("â\u0096", "-"),
+            ("â\u0097", "-"),
+        ):
+            text = text.replace(mojibake, separator)
         text = re.sub(r"[ \t]+", " ", text)
         return re.sub(r"\n{3,}", "\n\n", text).strip()
 
     @classmethod
     def extract_lab_candidates(cls, text: str) -> list[dict[str, Any]]:
         candidates: list[dict[str, Any]] = []
-        for line in cls.normalize_text(text).splitlines():
+        normalized_text = cls.normalize_text(text)
+        lines = normalized_text.splitlines()
+        for line in lines:
             range_match = cls.RANGE_SEARCH_PATTERN.search(line)
             if range_match:
                 result_matches = list(
@@ -143,6 +154,57 @@ class OCRService:
                     "source_text": line.strip(),
                 }
             )
+        candidates.extend(cls._extract_multiline_table_candidates(lines))
+        return candidates
+
+    @classmethod
+    def _extract_multiline_table_candidates(
+        cls, lines: list[str]
+    ) -> list[dict[str, Any]]:
+        lines = [line.strip() for line in lines if line.strip()]
+        headers = (
+            {"test", "test name", "tests", "investigation", "parameter"},
+            {"result", "value", "observed value"},
+            {"reference range", "ref range", "normal range"},
+            {"unit", "units"},
+        )
+        header_labels = {label for column in headers for label in column}
+        candidates: list[dict[str, Any]] = []
+        for index in range(max(0, len(lines) - 3)):
+            if not all(
+                lines[index + offset].strip().casefold() in header
+                for offset, header in enumerate(headers)
+            ):
+                continue
+
+            row_index = index + 4
+            while row_index + 3 < len(lines):
+                raw_name, raw_value, reference_range, unit = (
+                    line.strip() for line in lines[row_index : row_index + 4]
+                )
+                if (
+                    not raw_name
+                    or raw_name.casefold() in header_labels
+                    or not re.fullmatch(cls.NUMBER_PATTERN, raw_value)
+                    or not re.fullmatch(cls.RANGE_PATTERN, reference_range, re.IGNORECASE)
+                    or not cls.UNIT_PATTERN.fullmatch(unit)
+                ):
+                    break
+
+                value = cls._parse_number(raw_value)
+                candidates.append(
+                    {
+                        "name": cls._canonical_test_name(raw_name) or raw_name,
+                        "value": value,
+                        "unit": unit,
+                        "reference_range": reference_range,
+                        "status": cls._compare_to_reference(value, reference_range),
+                        "source_text": " | ".join(
+                            (raw_name, raw_value, reference_range, unit)
+                        ),
+                    }
+                )
+                row_index += 4
         return candidates
 
     @classmethod

@@ -29,6 +29,83 @@ def test_ocr_extracts_values_and_flags_only_explicit_reference_ranges():
     ]
 
 
+def test_ocr_extracts_multiline_table_lab_rows_and_normalizes_mojibake():
+    report_text = (
+        "Test\n"
+        "Result\n"
+        "Reference Range\n"
+        "Unit\n"
+        "Hemoglobin\n"
+        "13.8\n"
+        "13.0â\u0080\u009317.0\n"
+        "g/dL\n"
+        "WBC Count\n"
+        "7,200\n"
+        "4,000â\u0080\u009311,000\n"
+        "/µL\n"
+        "Fasting Glucose\n"
+        "108\n"
+        "70â\u0080\u009399\n"
+        "mg/dL\n"
+        "Vitamin B12\n"
+        "185\n"
+        "200â\u0080\u0093900\n"
+        "pg/mL\n"
+        "Vitamin D\n"
+        "18\n"
+        "30â\u0080\u0093100\n"
+        "ng/mL\n"
+        "Total Cholesterol\n"
+        "178\n"
+        "<200\n"
+        "mg/dL"
+    )
+
+    processed = OCRService.process_document(report_text)
+    candidates = processed["detected_tests"]
+    by_name = {item["name"]: item for item in candidates}
+
+    assert len(candidates) == 6
+    assert "found 6 possible laboratory value(s)" in processed["summary"]
+    assert (by_name["Hemoglobin"]["value"], by_name["Hemoglobin"]["reference_range"]) == (
+        13.8,
+        "13.0-17.0",
+    )
+    assert by_name["Hemoglobin"]["unit"] == "g/dL"
+    assert (by_name["White Blood Cell Count"]["value"], by_name["White Blood Cell Count"]["unit"]) == (
+        7200,
+        "/µL",
+    )
+    assert by_name["White Blood Cell Count"]["reference_range"] == "4,000-11,000"
+    assert (
+        by_name["Glucose"]["value"],
+        by_name["Glucose"]["reference_range"],
+        by_name["Glucose"]["unit"],
+        by_name["Glucose"]["status"],
+    ) == (108, "70-99", "mg/dL", "high")
+    assert (
+        by_name["Vitamin B12"]["value"],
+        by_name["Vitamin B12"]["reference_range"],
+        by_name["Vitamin B12"]["unit"],
+        by_name["Vitamin B12"]["status"],
+    ) == (185, "200-900", "pg/mL", "low")
+    assert (
+        by_name["Vitamin D"]["value"],
+        by_name["Vitamin D"]["reference_range"],
+        by_name["Vitamin D"]["unit"],
+        by_name["Vitamin D"]["status"],
+    ) == (18, "30-100", "ng/mL", "low")
+    assert (
+        by_name["Cholesterol"]["value"],
+        by_name["Cholesterol"]["reference_range"],
+        by_name["Cholesterol"]["unit"],
+        by_name["Cholesterol"]["status"],
+    ) == (178, "<200", "mg/dL", "normal")
+    assert OCRService.normalize_text("1â\u0080\u00942") == "1-2"
+    assert OCRService.normalize_text("1â€“2") == "1-2"
+    assert OCRService.normalize_text("1â€”2") == "1-2"
+
+
 def test_document_analysis_requires_explicit_result_confirmation():
     user = create_user()
     document = client.post(
