@@ -57,6 +57,49 @@ def test_cors_allows_production_frontend_and_local_development_origin():
         assert response.headers["access-control-allow-origin"] == origin
 
 
+def test_app_cors_handles_preflight_and_unauthenticated_api_response():
+    origin = "https://aihealthcopilot.onrender.com"
+    preflight = client.options(
+        "/api/auth/me",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == origin
+    assert preflight.headers["access-control-allow-credentials"] == "true"
+    assert "POST" in preflight.headers["access-control-allow-methods"]
+    assert "content-type" in preflight.headers["access-control-allow-headers"].lower()
+
+    unauthenticated = client.get("/api/auth/me", headers={"Origin": origin})
+    assert unauthenticated.status_code == 401
+    assert unauthenticated.headers["access-control-allow-origin"] == origin
+    assert unauthenticated.headers["access-control-allow-credentials"] == "true"
+
+
+def test_cors_headers_wrap_unhandled_api_errors():
+    origin = "https://aihealthcopilot.onrender.com"
+
+    async def fail():
+        raise RuntimeError("synthetic CORS test failure")
+
+    app.app.add_api_route("/cors-test-error", fail, methods=["GET"])
+    route = app.app.router.routes[-1]
+    try:
+        with TestClient(app, raise_server_exceptions=False) as error_client:
+            response = error_client.get(
+                "/cors-test-error",
+                headers={"Origin": origin},
+            )
+        assert response.status_code == 500
+        assert response.headers["access-control-allow-origin"] == origin
+        assert response.headers["access-control-allow-credentials"] == "true"
+    finally:
+        app.app.router.routes.remove(route)
+
+
 def test_create_user_and_profile():
     payload = {"name": "Test User", "email": "test@example.com", "language": "en"}
     created = register_user(payload)

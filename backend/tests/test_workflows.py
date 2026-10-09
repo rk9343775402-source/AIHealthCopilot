@@ -12,7 +12,7 @@ from app.api.routes import medical_documents
 from app.core.config import Settings
 from app.database.base import Base
 from app.database.session import _normalize_database_url
-from app.main import app
+from app.main import app, fastapi_app
 from app.models.health import LabResult, MedicalDocument, User
 from app.schemas.health import MedicalDocumentConfirmation
 from app.services.ocr_service import OCRService
@@ -51,11 +51,11 @@ def confirmation_database(tmp_path):
         finally:
             db.close()
 
-    app.dependency_overrides[medical_documents.get_db] = override_get_db
+    fastapi_app.dependency_overrides[medical_documents.get_db] = override_get_db
     try:
         yield session_factory, engine
     finally:
-        app.dependency_overrides.pop(medical_documents.get_db, None)
+        fastapi_app.dependency_overrides.pop(medical_documents.get_db, None)
         engine.dispose()
 
 

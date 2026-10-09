@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.database.base import Base
 from app.database.session import _TENANT_MODELS
-from app.main import app
+from app.main import app, fastapi_app
 
 
 PASSWORD_A = "fictional-user-a-password-123"
@@ -29,7 +29,7 @@ def register(client: TestClient, name: str, password: str) -> dict:
 def test_all_private_api_routes_reject_unauthenticated_requests():
     public_paths = {"/api/auth/register", "/api/auth/login"}
     with TestClient(app) as client:
-        for route in app.routes:
+        for route in fastapi_app.routes:
             if not isinstance(route, APIRoute) or not route.path.startswith("/api/"):
                 continue
             if route.path in public_paths:

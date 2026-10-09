@@ -39,24 +39,18 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="AI Personal Health Copilot", version="1.0.0", docs_url="/docs", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+allowed_origins = {
+    origin.strip().rstrip("/")
+    for origin in settings.allowed_origins.split(",")
+    if origin.strip()
+}
+allowed_origins.add("https://aihealthcopilot.onrender.com")
 
 @app.middleware("http")
 async def authenticate_api_requests(request: Request, call_next):
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
     origin = request.headers.get("origin")
-    allowed_origins = {
-        configured.strip().rstrip("/")
-        for configured in settings.allowed_origins.split(",")
-        if configured.strip()
-    }
     if request.method not in {"GET", "HEAD", "OPTIONS"} and origin and origin.rstrip("/") not in allowed_origins:
         return JSONResponse(status_code=403, content={"detail": "Request origin is not allowed."})
 
@@ -103,3 +97,13 @@ app.include_router(abdm_router)
 @app.get("/")
 def root():
     return {"app": "AI Personal Health Copilot", "status": "online", "demo_mode": settings.demo_mode}
+
+
+fastapi_app = app
+app = CORSMiddleware(
+    app=fastapi_app,
+    allow_origins=sorted(allowed_origins),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type"],
+)
