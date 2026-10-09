@@ -631,18 +631,10 @@ export default function App() {
     finally { setSaving(false); }
   };
 
-  const createDoctorSummary = async () => {
-    if (!userId) return;
-    setError(""); setSaving(true); setDoctorSummary(null);
-    try {
-      const result = await request("/api/doctor-visits/summary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: Number(userId) }),
-      });
-      setDoctorSummary(result);
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
+  const createDoctorSummary = () => {
+    setError("");
+    setDoctorSummary(null);
+    setNotice("Update Coming Soon");
   };
 
   const sendWellbeingMessage = async (event) => {
@@ -696,7 +688,7 @@ export default function App() {
           {page !== "Settings" && <button className="button secondary refresh-btn" onClick={() => { setNotice(""); loadPage(page); }} disabled={loading}><span>↻</span> {translate("Refresh", language)}</button>}
         </section>
         {error && <div className="alert error-alert" role="alert"><strong>Something needs attention</strong><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
-        {notice && <div className="alert success-alert" role="status"><span>✓</span>{notice}<button type="button" onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
+        {notice && <div className={`alert ${notice === "Update Coming Soon" ? "info-alert" : "success-alert"}`} role="status">{notice === "Update Coming Soon" ? <><strong>Update Coming Soon</strong><span>Clinician summaries will be available in a future update.</span></> : <><span>✓</span>{notice}<button type="button" onClick={() => setNotice("")} aria-label="Dismiss message">×</button></>}</div>}
         {!userId && page !== "Settings" && <div className="alert info-alert"><strong>No active user</strong><span>Create or select a profile in Settings to connect health information.</span><button className="text-button" onClick={() => setCurrentPage("Settings")}>Go to settings →</button></div>}
 
         {page === "Dashboard" && <Dashboard profile={profile} data={pageData} loading={loading} onNavigate={setCurrentPage} />}
@@ -727,7 +719,7 @@ export default function App() {
           {page === "Medicines" && <ImageRecognitionCard title="Recognize a medicine package" endpoint="/api/medicines/recognize" buttonLabel="Request image recognition" helperText="Recognition may be uncertain. It does not add a medicine to your record; verify the package with a pharmacist before recording or taking it." />}
           {page === "Animal Bite Assistant" && <ImageRecognitionCard title="Optional animal identification" endpoint="/api/animal-bites/recognize-animal" buttonLabel="Request animal identification" helperText="Keep away from animals. A picture-based label is uncertain and cannot estimate rabies exposure." />}
           {page === "Doctor Visits" && <section className="surface"><SectionHead title="Visit preparation summary" subtitle="Drafted only from saved records; verify details before sharing." />
-            <button className="button secondary" type="button" onClick={createDoctorSummary} disabled={saving || !userId}>{saving ? "Preparing…" : "Prepare clinician summary"}</button>
+            <button className="button secondary" type="button" onClick={createDoctorSummary} disabled={saving}>{saving ? "Preparing…" : "Prepare clinician summary"}</button>
             {doctorSummary && <pre className="code-response">{JSON.stringify(doctorSummary, null, 2)}</pre>}
           </section>}
         </div>}
