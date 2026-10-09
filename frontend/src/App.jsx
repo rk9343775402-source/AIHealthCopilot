@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 const NAV_GROUPS = [
   { label: "Overview", items: ["Dashboard", "Health Timeline"] },
   { label: "Your health", items: ["Medical Records", "Lab Results", "Medicines", "Doctor Visits", "Health Profile"] },
-  { label: "Support", items: ["Injury Assistant", "Animal Bite Assistant", "Emergency Mode", "AI Companion", "Wellbeing"] },
+  { label: "Support", items: ["Injury Assistant", "Animal Bite Assistant", "Emergency Mode", "Emergency SOS (Test Mode)", "AI Companion", "Wellbeing"] },
   { label: "Connected care", items: ["FHIR / ABDM", "Settings"] },
 ];
 const ROUTES = {
@@ -28,10 +28,11 @@ const PAGE_META = {
   "Injury Assistant": ["Injury support", "Share details to record an injury and request available guidance."],
   "Animal Bite Assistant": ["Animal bite support", "Record a bite and request available guidance. This is not a substitute for urgent medical care."],
   "Emergency Mode": ["Emergency mode", "If someone may be in immediate danger, contact your local emergency service now."],
+  "Emergency SOS (Test Mode)": ["Emergency SOS (Test Mode)", "A local-only demonstration. This prototype does not contact emergency services."],
   "AI Companion": ["AI health companion", "Ask a question. Responses depend on the connected service and available health information."],
   Wellbeing: ["Wellbeing check-in", "Record how you are feeling. Your entries are sent to the connected service."],
   "FHIR / ABDM": ["Connected health data", "Request the FHIR patient resource, bundle, or ABDM mock response for the selected user."],
-  Settings: ["Settings", "Manage the active user and the API connection used by this application."],
+  Settings: ["Settings", "Review your signed-in account and the configured API connection."],
 };
 const HI = {
   "Overview": "अवलोकन", "Your health": "आपका स्वास्थ्य", "Support": "सहायता", "Connected care": "जुड़ी स्वास्थ्य सेवाएँ",
@@ -65,7 +66,7 @@ const HI = {
 const translate = (text, language) => language === "hi" ? HI[text] || text : text;
 
 async function api(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, options);
+  const response = await fetch(`${API_BASE}${path}`, { ...options, credentials: "include" });
   const text = await response.text();
   let body;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
@@ -110,6 +111,7 @@ function Icon({ name }) {
     "Injury Assistant": "M12 3v18M3 12h18M5.6 5.6l12.8 12.8m0-12.8L5.6 18.4",
     "Animal Bite Assistant": "M4 12c3-6 13-6 16 0M6 15c2 4 10 4 12 0M8 9v.1M16 9v.1",
     "Emergency Mode": "M12 3 2.5 20h19L12 3zM12 9v5M12 17h.01",
+    "Emergency SOS (Test Mode)": "M12 3 2.5 20h19L12 3zM12 8v6M12 17h.01",
     "AI Companion": "M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h1v-7H7a5 5 0 0 1 10 0h-1v7h1a3 3 0 0 0 3-3v-5a8 8 0 0 0-8-8zM10 21h4",
     Wellbeing: "M20.8 8.6c0 5.4-8.8 11-8.8 11S3.2 14 3.2 8.6A4.6 4.6 0 0 1 12 6.5a4.6 4.6 0 0 1 8.8 2.1z",
     "FHIR / ABDM": "M4 4h16v16H4zM8 8h8M8 12h8M8 16h5",
@@ -232,7 +234,7 @@ const RESOURCE_FIELDS = {
   ],
 };
 
-function ImageRecognitionCard({ title, endpoint, buttonLabel, helperText }) {
+function ImageRecognitionCard({ title, endpoint, buttonLabel, helperText, request }) {
   const [image, setImage] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -242,7 +244,7 @@ function ImageRecognitionCard({ title, endpoint, buttonLabel, helperText }) {
     if (!image) { setError("Choose or capture an image first."); return; }
     setBusy(true); setError(""); setResult(null);
     try {
-      setResult(await api(endpoint, {
+      setResult(await request(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_data_url: await fileToDataUrl(image) }),
@@ -264,7 +266,7 @@ function ImageRecognitionCard({ title, endpoint, buttonLabel, helperText }) {
   </section>;
 }
 
-function EmergencyTools({ userId }) {
+function EmergencyTools({ userId, request }) {
   const [guidance, setGuidance] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [contact, setContact] = useState("");
@@ -289,8 +291,8 @@ function EmergencyTools({ userId }) {
     const loadEmergencyData = async () => {
       try {
         const [guide, contactsResult] = await Promise.all([
-          api("/api/emergency/guidance"),
-          userId ? api(`/api/trusted-contacts?user_id=${encodeURIComponent(userId)}`) : Promise.resolve({ items: [] }),
+          request("/api/emergency/guidance"),
+          userId ? request(`/api/trusted-contacts?user_id=${encodeURIComponent(userId)}`) : Promise.resolve({ items: [] }),
         ]);
         if (!active) return;
         setGuidance(guide);
@@ -302,10 +304,10 @@ function EmergencyTools({ userId }) {
     };
     loadEmergencyData();
     return () => { active = false; };
-  }, [userId]);
+  }, [request, userId]);
 
   const refreshContacts = async () => {
-    const response = await api(`/api/trusted-contacts?user_id=${encodeURIComponent(userId)}`);
+    const response = await request(`/api/trusted-contacts?user_id=${encodeURIComponent(userId)}`);
     setContacts(asList(response));
   };
 
@@ -313,7 +315,7 @@ function EmergencyTools({ userId }) {
     event.preventDefault();
     setError(""); setNotice(""); setBusy(true);
     try {
-      const created = await api("/api/trusted-contacts", {
+      const created = await request("/api/trusted-contacts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...newContact, user_id: Number(userId) }),
@@ -329,7 +331,7 @@ function EmergencyTools({ userId }) {
   const deleteContact = async (contactId) => {
     setError(""); setNotice(""); setBusy(true);
     try {
-      await api(`/api/trusted-contacts/${encodeURIComponent(contactId)}`, { method: "DELETE" });
+      await request(`/api/trusted-contacts/${encodeURIComponent(contactId)}`, { method: "DELETE" });
       await refreshContacts();
       if (String(contactId) === contact) setContact("");
       setNotice("Trusted contact removed.");
@@ -348,7 +350,7 @@ function EmergencyTools({ userId }) {
     if (!location || !contact) { setError("Allow location access and choose a trusted contact first."); return; }
     setBusy(true); setError(""); setShare(null);
     try {
-      const response = await api("/api/emergency/location-share/prepare", {
+      const response = await request("/api/emergency/location-share/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -409,17 +411,98 @@ function EmergencyTools({ userId }) {
   </div>;
 }
 
+function EmergencySOSTest() {
+  const [location, setLocation] = useState(null);
+  const [locationState, setLocationState] = useState("idle");
+  const [incidentCreatedAt, setIncidentCreatedAt] = useState(null);
+
+  const getLocation = () => {
+    setLocation(null);
+    setLocationState("loading");
+    if (!navigator.geolocation) {
+      setLocationState("unsupported");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          timestamp: new Date(position.timestamp),
+        });
+        setLocationState("available");
+      },
+      (error) => {
+        setLocationState(error.code === error.PERMISSION_DENIED ? "denied" : "error");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
+
+  const mapUrl = location
+    ? `https://www.openstreetmap.org/?mlat=${location.latitude}&mlon=${location.longitude}#map=16/${location.latitude}/${location.longitude}`
+    : null;
+
+  return <div className="sos-test-screen">
+    <section className="surface sos-test-panel">
+      <div className="alert error-alert sos-test-warning" role="note">
+        <strong>TEST MODE — NO AMBULANCE WILL BE CALLED</strong>
+      </div>
+      <p className="sos-test-intro">This demonstration runs only in this browser. It will not call or message anyone, contact dispatch, or send an incident to the backend.</p>
+      <div className="emergency-callout sos-test-callout">
+        <span className="emergency-icon" aria-hidden="true">!</span>
+        <div>
+          <p className="card-kicker">SIMULATION ONLY</p>
+          <h2>Test the SOS flow</h2>
+          <p>Creates a simulated incident in this screen only. No emergency services or contacts will be notified.</p>
+          <button className="button sos-test-button" type="button" onClick={() => setIncidentCreatedAt(new Date())}>
+            Create SOS Test Incident
+          </button>
+        </div>
+      </div>
+      {incidentCreatedAt && <div className="alert success-alert sos-incident-status" role="status">
+        <strong>Test incident created locally — no emergency services contacted.</strong>
+        <span>Created: {incidentCreatedAt.toLocaleString()}</span>
+      </div>}
+    </section>
+
+    <section className="surface">
+      <SectionHead title="Optional location preview" subtitle="Location is requested only when you press the button below. No continuous tracking." />
+      <button className="button secondary" type="button" onClick={getLocation} disabled={locationState === "loading"}>
+        {locationState === "loading" ? "Getting location…" : "Get My Current Location"}
+      </button>
+      {locationState === "loading" && <p className="loading-state" role="status">Waiting for browser location permission and a position…</p>}
+      {locationState === "unsupported" && <div className="alert error-alert sos-location-message" role="alert"><strong>Location is not supported by this browser.</strong></div>}
+      {locationState === "denied" && <div className="alert error-alert sos-location-message" role="alert"><strong>Location permission was denied. Allow location access in your browser settings and try again.</strong></div>}
+      {locationState === "error" && <div className="alert error-alert sos-location-message" role="alert"><strong>Could not get your location. Check your device location settings or try again.</strong></div>}
+      {location && <div className="sos-location-result">
+        <dl>
+          <div><dt>Latitude</dt><dd>{location.latitude}</dd></div>
+          <div><dt>Longitude</dt><dd>{location.longitude}</dd></div>
+          <div><dt>Accuracy</dt><dd>{location.accuracy} meters</dd></div>
+          <div><dt>Timestamp</dt><dd>{location.timestamp.toLocaleString()}</dd></div>
+        </dl>
+        <a className="button secondary" href={mapUrl} target="_blank" rel="noopener noreferrer">View on OpenStreetMap ↗</a>
+      </div>}
+    </section>
+  </div>;
+}
+
 export default function App() {
   const [page, setPage] = useState("Dashboard");
-  const [users, setUsers] = useState([]);
-  const [userId, setUserId] = useState(localStorage.getItem("health-copilot-user") || "");
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState("login");
+  const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", phone: "" });
+  const sessionEpoch = useRef(0);
+  const userId = authUser ? String(authUser.id) : "";
   const [profile, setProfile] = useState(null);
   const [pageData, setPageData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [userForm, setUserForm] = useState({ name: "", email: "", phone: "" });
   const [question, setQuestion] = useState("");
   const [chatResponse, setChatResponse] = useState(null);
   const [wellbeingMessage, setWellbeingMessage] = useState("");
@@ -428,25 +511,47 @@ export default function App() {
   const [selectedCandidates, setSelectedCandidates] = useState([]);
   const [assistantResponse, setAssistantResponse] = useState(null);
   const [connectedData, setConnectedData] = useState({});
-  const [apiBase, setApiBase] = useState(API_BASE);
   const [language, setLanguage] = useState(localStorage.getItem("health-copilot-language") || "en");
 
-  const activeUser = useMemo(() => users.find((user) => String(user.id) === String(userId)), [users, userId]);
-  const request = useCallback(async (path, options) => api(path, options), []);
-  const loadUsers = useCallback(async () => {
+  const activeUser = useMemo(() => authUser, [authUser]);
+  const request = useCallback(async (path, options) => {
+    const requestEpoch = sessionEpoch.current;
     try {
-      const data = await request("/api/users");
-      const list = asList(data);
-      setUsers(list);
-      if (!userId && list[0]?.id !== undefined) setUserId(String(list[0].id));
-    } catch (e) { setError(`Could not load users: ${e.message}`); }
-  }, [request, userId]);
+      const response = await api(path, options);
+      if (requestEpoch !== sessionEpoch.current) throw new Error("The active session changed; please retry.");
+      return response;
+    } catch (requestError) {
+      if (requestEpoch !== sessionEpoch.current) throw new Error("The active session changed; please retry.");
+      if (requestError.message.startsWith("401:")) {
+        sessionEpoch.current += 1;
+        setAuthUser(null);
+        setAuthMode("login");
+        setAuthForm({ name: "", email: "", password: "", phone: "" });
+        setProfile(null);
+        setPageData(null);
+        setChatResponse(null);
+        setWellbeingResponse(null);
+        setDoctorSummary(null);
+        setAssistantResponse(null);
+        setConnectedData({});
+        setSelectedCandidates([]);
+        setQuestion("");
+        setWellbeingMessage("");
+        setNotice("");
+      }
+      if (requestEpoch !== sessionEpoch.current) throw new Error("The active session changed; please retry.");
+      throw requestError;
+    }
+  }, []);
 
-  useEffect(() => { loadUsers(); }, [loadUsers]);
   useEffect(() => {
-    if (userId) localStorage.setItem("health-copilot-user", userId);
-    else localStorage.removeItem("health-copilot-user");
-  }, [userId]);
+    api("/api/auth/me")
+      .then((result) => setAuthUser(result.user))
+      .catch((loadError) => {
+        if (!loadError.message.startsWith("401:")) setError("Could not verify your session. Check the backend connection and try again.");
+      })
+      .finally(() => setAuthLoading(false));
+  }, []);
   useEffect(() => {
     localStorage.setItem("health-copilot-language", language);
     document.documentElement.lang = language;
@@ -486,7 +591,9 @@ export default function App() {
     finally { setLoading(false); }
   }, [page, request, userId]);
 
-  useEffect(() => { loadPage(page); }, [page, userId, loadPage]);
+  useEffect(() => {
+    if (!authLoading && userId) loadPage(page);
+  }, [authLoading, page, userId, loadPage]);
 
   const saveResource = async (target, values) => {
     setSaving(true); setError(""); setNotice("");
@@ -562,19 +669,54 @@ export default function App() {
     finally { setSaving(false); }
   };
 
-  const createUser = async (event) => {
-    event.preventDefault(); setSaving(true); setError(""); setNotice("");
+  const handleAuthSubmit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
     try {
-      const created = await request("/api/users", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(userForm),
+      const result = await api(`/api/auth/${authMode === "register" ? "register" : "login"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(authMode === "register"
+          ? { name: authForm.name, email: authForm.email, password: authForm.password, phone: authForm.phone || null }
+          : { email: authForm.email, password: authForm.password }),
       });
-      await loadUsers();
-      const newId = created?.id ?? created?.user?.id;
-      if (newId !== undefined) setUserId(String(newId));
-      setUserForm({ name: "", email: "", phone: "" });
-      setNotice("User created.");
-    } catch (e) { setError(`Could not create user: ${e.message}`); }
-    finally { setSaving(false); }
+      sessionEpoch.current += 1;
+      setAuthUser(result.user);
+      setAuthForm({ name: "", email: "", password: "", phone: "" });
+      setPage("Dashboard");
+      setNotice("");
+      setError("");
+    } catch (authError) {
+      setError(authError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const logout = async () => {
+    sessionEpoch.current += 1;
+    setAuthUser(null);
+    setAuthMode("login");
+    setAuthForm({ name: "", email: "", password: "", phone: "" });
+    setProfile(null);
+    setPageData(null);
+    setChatResponse(null);
+    setWellbeingResponse(null);
+    setDoctorSummary(null);
+    setAssistantResponse(null);
+    setConnectedData({});
+    setSelectedCandidates([]);
+    setQuestion("");
+    setWellbeingMessage("");
+    setNotice("");
+    setError("");
+    setPage("Dashboard");
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+    } catch (logoutError) {
+      setError(`Local data was cleared, but logout could not be confirmed: ${logoutError.message}`);
+    }
   };
 
   const askQuestion = async (event) => {
@@ -655,17 +797,43 @@ export default function App() {
   const pageMeta = PAGE_META[page];
   const meta = [translate(pageMeta[0], language), translate(pageMeta[1], language)];
 
+  if (authLoading) {
+    return <div className="auth-page"><div className="loading-state"><span className="spinner" /> Checking session…</div></div>;
+  }
+
+  if (!authUser) {
+    return <main className="auth-page">
+      <section className="surface auth-card">
+        <div className="brand auth-brand"><span className="brand-icon"><Icon name="Health Profile" /></span><span><strong>care<span>compass</span></strong><small>YOUR HEALTH, CONNECTED</small></span></div>
+        <h1>{authMode === "register" ? "Create your account" : "Sign in"}</h1>
+        <p className="auth-description">Your health information is available only after you sign in.</p>
+        {error && <div className="alert error-alert" role="alert">{error}</div>}
+        <form onSubmit={handleAuthSubmit} className="auth-form">
+          {authMode === "register" && <>
+            <label className="field"><span>Full name</span><input autoComplete="name" maxLength="120" required value={authForm.name} onChange={(event) => setAuthForm((current) => ({ ...current, name: event.target.value }))} /></label>
+            <label className="field"><span>Phone (optional)</span><input type="tel" autoComplete="tel" maxLength="40" value={authForm.phone} onChange={(event) => setAuthForm((current) => ({ ...current, phone: event.target.value }))} /></label>
+          </>}
+          <label className="field"><span>Email</span><input type="email" autoComplete="email" maxLength="180" required value={authForm.email} onChange={(event) => setAuthForm((current) => ({ ...current, email: event.target.value }))} /></label>
+          <label className="field"><span>Password{authMode === "register" && " (at least 12 characters)"}</span><input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} minLength={authMode === "register" ? 12 : 1} maxLength="256" required value={authForm.password} onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))} /></label>
+          <button className="button primary auth-submit" type="submit" disabled={saving}>{saving ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button>
+        </form>
+        <button className="text-button auth-mode-toggle" type="button" onClick={() => { setAuthMode(authMode === "register" ? "login" : "register"); setError(""); }}>
+          {authMode === "register" ? "Already have an account? Sign in" : "New here? Create an account"}
+        </button>
+      </section>
+    </main>;
+  }
+
   return <div className="app-shell">
     <aside className="sidebar">
       <a className="brand" href="#dashboard" onClick={(event) => { event.preventDefault(); setCurrentPage("Dashboard"); }}>
         <span className="brand-icon"><Icon name="Health Profile" /></span><span><strong>care<span>compass</span></strong><small>YOUR HEALTH, CONNECTED</small></span>
       </a>
       <div className="user-switch">
-        <label htmlFor="active-user">ACTIVE PROFILE</label>
-        <select id="active-user" value={userId} onChange={(event) => setUserId(event.target.value)}>
-          <option value="">Select a user</option>
-          {users.map((user) => <option value={user.id} key={user.id}>{user.name || user.full_name || `User ${user.id}`}</option>)}
-        </select>
+        <label>SIGNED IN</label>
+        <span className="signed-in-name">{activeUser.name}</span>
+        <span className="signed-in-email">{activeUser.email}</span>
+        <button className="text-button logout-button" type="button" onClick={logout}>Log out</button>
       </div>
       <nav className="nav" aria-label="Main navigation">
         {NAV_GROUPS.map((group) => <div className="nav-group" key={group.label}><p>{translate(group.label, language)}</p>{group.items.map((item) =>
@@ -679,7 +847,7 @@ export default function App() {
     <main className="main-panel">
       <header className="topbar">
         <div className="breadcrumbs"><span>CareCompass</span><b>/</b><strong>{translate(page, language)}</strong></div>
-        <div className="top-actions"><label className="language-select" htmlFor="ui-language"><span className="sr-only">Language</span><select id="ui-language" value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en">EN</option><option value="hi">हिंदी</option></select></label><span className="connection-pill"><span className="status-dot neutral-dot" /> API endpoint</span>
+        <div className="top-actions"><label className="language-select" htmlFor="ui-language"><span className="sr-only">Language</span><select id="ui-language" value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en">EN</option><option value="hi">हिंदी</option></select></label><span className="connection-pill"><span className="status-dot neutral-dot" /> API endpoint</span><button className="button secondary top-logout" type="button" onClick={logout}>Log out</button>
           <button className="avatar" type="button" onClick={() => setCurrentPage("Settings")} aria-label="Open settings">{activeUser?.name?.[0]?.toUpperCase() || "U"}</button>
         </div>
       </header>
@@ -689,11 +857,10 @@ export default function App() {
         </section>
         {error && <div className="alert error-alert" role="alert"><strong>Something needs attention</strong><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error">×</button></div>}
         {notice && <div className={`alert ${notice === "Update Coming Soon" ? "info-alert" : "success-alert"}`} role="status">{notice === "Update Coming Soon" ? <><strong>Update Coming Soon</strong><span>Clinician summaries will be available in a future update.</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss clinician summary notice">×</button></> : <><span>✓</span>{notice}<button type="button" onClick={() => setNotice("")} aria-label="Dismiss message">×</button></>}</div>}
-        {!userId && page !== "Settings" && <div className="alert info-alert"><strong>No active user</strong><span>Create or select a profile in Settings to connect health information.</span><button className="text-button" onClick={() => setCurrentPage("Settings")}>Go to settings →</button></div>}
-
         {page === "Dashboard" && <Dashboard profile={profile} data={pageData} loading={loading} onNavigate={setCurrentPage} />}
         {page === "Health Timeline" && <section className="surface"><SectionHead title="Events" subtitle="Events returned for this profile" /><DataList data={pageData} emptyText={loading ? "Loading timeline…" : "No timeline events returned."} /></section>}
         {page === "Health Profile" && <section className="surface"><SectionHead title="Profile details" subtitle="Profile data received from the API" /><ProfileView profile={profile} loading={loading} /></section>}
+        {page === "Emergency SOS (Test Mode)" && <EmergencySOSTest />}
 
         {ROUTES[page] && <div className={`split-layout ${page === "Injury Assistant" || page === "Animal Bite Assistant" ? "assistant-layout" : ""}`}>
           <section className="surface"><SectionHead title={page === "Medical Records" ? "Your records" : page} subtitle={`Information currently returned for ${activeUser?.name || "the selected profile"}`} />
@@ -710,15 +877,15 @@ export default function App() {
             </div>}
           </section>
           <FormPanel title={page === "Injury Assistant" || page === "Animal Bite Assistant" ? "Tell us what happened" : page === "Medical Records" ? "Add a record" : `Add ${page === "Lab Results" ? "result" : page === "Medicines" ? "medicine" : "check-in"}`}
-            description={page === "Medical Records" ? "Files are stored on the backend, but authentication and access controls are not implemented. Images use bilingual OCR when Tesseract English and Hindi data are installed." : page.includes("Assistant") ? "Image review is optional and may be unavailable unless OmniRoute vision is configured. Never delay urgent care." : ""}
+            description={page === "Medical Records" ? "Files are stored on the backend and served through authenticated account-scoped requests. Images use bilingual OCR when Tesseract English and Hindi data are installed." : page.includes("Assistant") ? "Image review is optional and may be unavailable unless OmniRoute vision is configured. Never delay urgent care." : ""}
             fields={RESOURCE_FIELDS[page] || []} onSubmit={(values) => saveResource(page, values)} busy={saving} submitLabel={page.includes("Assistant") ? "Submit for guidance" : page === "Doctor Visits" ? "Save visit" : "Save"} language={language} />
           {(page === "Injury Assistant" || page === "Animal Bite Assistant") && assistantResponse && <section className="surface assistant-response"><SectionHead title="Service response" subtitle="Response returned by the connected endpoint" /><pre className="code-response">{JSON.stringify(assistantResponse, null, 2)}</pre></section>}
           {page === "Lab Results" && <section className="surface trend-panel"><SectionHead title="Lab trends" subtitle="Descriptive changes from saved results with matching test names and units; not clinical interpretation." />
             {pageData?.trends?.items?.length ? pageData.trends.items.map((trend) => <article className="trend-card" key={trend.test_name}><div className="record-head"><strong>{trend.test_name}</strong><span>{trend.direction}</span></div><p>{trend.change === null ? "More comparable results are needed to show a numeric change." : `Change: ${trend.change} ${trend.unit || ""}`}</p><p>{trend.interpretation}</p><DataList data={trend.values} emptyText="No values." /></article>) : <p className="hint">No saved lab results are available for trend comparison.</p>}
           </section>}
-          {page === "Medicines" && <ImageRecognitionCard title="Recognize a medicine package" endpoint="/api/medicines/recognize" buttonLabel="Request image recognition" helperText="Recognition may be uncertain. It does not add a medicine to your record; verify the package with a pharmacist before recording or taking it." />}
-          {page === "Animal Bite Assistant" && <ImageRecognitionCard title="Optional animal identification" endpoint="/api/animal-bites/recognize-animal" buttonLabel="Request animal identification" helperText="Keep away from animals. A picture-based label is uncertain and cannot estimate rabies exposure." />}
-          {page === "Doctor Visits" && <section className="surface"><SectionHead title="Visit preparation summary" subtitle="Drafted only from saved records; verify details before sharing." />
+          {page === "Medicines" && <ImageRecognitionCard title="Recognize a medicine package" endpoint="/api/medicines/recognize" buttonLabel="Request image recognition" helperText="Recognition may be uncertain. It does not add a medicine to your record; verify the package with a pharmacist before recording or taking it." request={request} />}
+          {page === "Animal Bite Assistant" && <ImageRecognitionCard title="Optional animal identification" endpoint="/api/animal-bites/recognize-animal" buttonLabel="Request animal identification" helperText="Keep away from animals. A picture-based label is uncertain and cannot estimate rabies exposure." request={request} />}
+          {page === "Doctor Visits" && <section className="surface"><SectionHead title="Visit preparation summary" subtitle="Temporarily unavailable. The Prepare button displays an update notice without requesting the summary API." />
             <button className="button secondary" type="button" onClick={createDoctorSummary} disabled={saving}>{saving ? "Preparing…" : "Prepare clinician summary"}</button>
             {doctorSummary && <pre className="code-response">{JSON.stringify(doctorSummary, null, 2)}</pre>}
           </section>}
@@ -726,7 +893,7 @@ export default function App() {
 
         {page === "Emergency Mode" && <div className="emergency-layout">
           <section className="emergency-callout"><div className="emergency-icon">!</div><div><p className="card-kicker">IMMEDIATE HELP</p><h2>Need urgent medical help?</h2><p>This app cannot contact emergency services or assess an emergency. Call your local emergency number now if you or someone else is in immediate danger.</p></div></section>
-          <EmergencyTools userId={userId} />
+          <EmergencyTools userId={userId} request={request} />
           <div className="split-layout"><section className="surface"><SectionHead title="Recorded events" subtitle="Emergency events returned for this profile" />{loading ? <Loading /> : <DataList data={pageData} emptyText="No emergency events returned." />}</section>
             <FormPanel title="Record an event" fields={RESOURCE_FIELDS["Emergency Mode"]} onSubmit={(values) => saveResource("Emergency Mode", values)} busy={saving} submitLabel="Save event" language={language} /></div>
         </div>}
@@ -761,22 +928,17 @@ export default function App() {
         </div>}
 
         {page === "Settings" && <div className="settings-grid">
-          <section className="surface"><SectionHead title="User profiles" subtitle="Profiles are loaded from the users API." />
-            <div className="settings-user-row"><label className="field" htmlFor="settings-user"><span>Active user</span><select id="settings-user" value={userId} onChange={(event) => setUserId(event.target.value)}><option value="">Select a user</option>{users.map((user) => <option value={user.id} key={user.id}>{user.name || user.full_name || `User ${user.id}`}</option>)}</select></label><button className="button secondary" onClick={loadUsers} disabled={loading}>Reload users</button></div>
-            <div className="divider" /><h3 className="form-title">Create a profile</h3>
-            <form onSubmit={createUser} className="fields-grid user-create">
-              {[["name", "Full name", "text"], ["email", "Email address", "email"], ["phone", "Phone number", "tel"]].map(([key, label, type]) => <label className="field" key={key} htmlFor={`new-${key}`}><span>{label}{key === "name" && <i> *</i>}</span><input id={`new-${key}`} type={type} required={key === "name"} value={userForm[key]} onChange={(event) => setUserForm((current) => ({ ...current, [key]: event.target.value }))} /></label>)}
-              <button className="button primary" disabled={saving}>Create user →</button>
-            </form>
+          <section className="surface"><SectionHead title="Account" subtitle="This browser session is authenticated as the account shown below." />
+            <div className="settings-account"><strong>{activeUser.name}</strong><span>{activeUser.email}</span><button className="button secondary" type="button" onClick={logout}>Log out</button></div>
           </section>
-          <section className="surface"><SectionHead title="API connection" subtitle="Configure the backend origin for this browser session." />
-            <p className="error-banner">This scaffold has no sign-in or access controls. Do not enter real health information or expose it to the public internet. When configured, OmniRoute receives only the health text or image required for the requested AI feature.</p>
-            <label className="field" htmlFor="api-base"><span>VITE_API_BASE_URL</span><input id="api-base" value={apiBase} onChange={(event) => setApiBase(event.target.value)} /></label>
-            <p className="hint">The application uses the build-time VITE_API_BASE_URL environment variable (default: http://localhost:8000). Changing this field previews the value only; configure the environment and rebuild to apply it. Interface translation is partial; stored medical records are not automatically translated.</p>
+          <section className="surface"><SectionHead title="API connection" subtitle="Backend origin configured when the frontend is built." />
+            <p className="hint">Private API requests require this account’s authenticated session. When configured, OmniRoute receives only the health text or image required for the requested AI feature.</p>
+            <label className="field" htmlFor="api-base"><span>VITE_API_BASE_URL</span><input id="api-base" value={API_BASE} readOnly /></label>
+            <p className="hint">This value is read-only. Set VITE_API_BASE_URL in the frontend build environment and rebuild to change it. Interface translation is partial; stored medical records are not automatically translated.</p>
             <div className="connection-detail"><span className="status-dot" /><span>Current API origin</span><code>{API_BASE}</code></div>
           </section>
         </div>}
-        <footer className="page-footer"><span>CareCompass · Records are linked to the selected profile; API ownership controls are not implemented.</span><span>AI requests may transmit supplied health text or images to your configured OmniRoute provider. This app is not emergency care.</span></footer>
+        <footer className="page-footer"><span>CareCompass · Private records are scoped to the authenticated account.</span><span>AI requests may transmit supplied health text or images to your configured OmniRoute provider. This app is not emergency care.</span></footer>
       </div>
     </main>
   </div>;

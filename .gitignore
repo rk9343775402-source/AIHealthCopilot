@@ -6,6 +6,7 @@ __pycache__/
 !.env.example
 backend/.env
 !backend/.env.example
+!backend/.env.test.example
 backend/.pytest_cache/
 frontend/node_modules/
 frontend/dist/

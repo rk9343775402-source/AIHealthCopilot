@@ -7,7 +7,7 @@ from io import BytesIO
 from typing import Any, Optional
 
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 def validate_image_data_url(value: str | None) -> str | None:
@@ -54,6 +54,18 @@ class UserOut(UserCreate):
     id: int
     created_at: datetime
     updated_at: datetime
+
+
+class AuthRegister(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    email: EmailStr
+    password: str = Field(..., min_length=12, max_length=256)
+    phone: Optional[str] = Field(default=None, max_length=40)
+
+
+class AuthLogin(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=256)
 
 
 class MedicalDocumentCreate(BaseModel):

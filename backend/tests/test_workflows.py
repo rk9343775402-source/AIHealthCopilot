@@ -1,4 +1,5 @@
 import json
+from itertools import count
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
@@ -17,12 +18,21 @@ from app.schemas.health import MedicalDocumentConfirmation
 from app.services.ocr_service import OCRService
 
 client = TestClient(app)
+_user_sequence = count()
 
 
 def create_user(name="Workflow User"):
-    response = client.post("/api/users", json={"name": name})
-    assert response.status_code == 200
-    return response.json()
+    suffix = next(_user_sequence)
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "name": name,
+            "email": f"workflow-{suffix}@example.com",
+            "password": "fictional-workflow-password-123",
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["user"]
 
 
 @pytest.fixture

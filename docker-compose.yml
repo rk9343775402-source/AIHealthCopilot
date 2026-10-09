@@ -26,6 +26,9 @@ services:
       OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-https://api.omniroute.ai/v1}
       OMNIROUTE_API_KEY: ${OMNIROUTE_API_KEY:-}
       OMNIROUTE_MODEL: ${OMNIROUTE_MODEL:-gpt-4o-mini}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY in the project-root .env}
+      AUTH_TOKEN_EXPIRE_MINUTES: ${AUTH_TOKEN_EXPIRE_MINUTES:-720}
+      APP_ENV: ${APP_ENV:-development}
       UPLOAD_DIR: /app/data/uploads
       DEMO_MODE: ${DEMO_MODE:-false}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,https://aihealthcopilot.onrender.com}

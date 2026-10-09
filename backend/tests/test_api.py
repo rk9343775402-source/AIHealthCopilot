@@ -8,6 +8,18 @@ from app.main import app
 client = TestClient(app)
 
 
+def register_user(payload):
+    response = client.post(
+        "/api/auth/register",
+        json={
+            **payload,
+            "password": "fictional-test-password-123",
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["user"]
+
+
 def test_root():
     response = client.get("/")
     assert response.status_code == 200
@@ -47,9 +59,7 @@ def test_cors_allows_production_frontend_and_local_development_origin():
 
 def test_create_user_and_profile():
     payload = {"name": "Test User", "email": "test@example.com", "language": "en"}
-    response = client.post("/api/users", json=payload)
-    assert response.status_code == 200
-    created = response.json()
+    created = register_user(payload)
     user_id = created["id"]
 
     profile = client.get(f"/api/health-profile/{user_id}")
@@ -58,7 +68,7 @@ def test_create_user_and_profile():
 
 
 def test_lab_and_health_chat():
-    user = client.post("/api/users", json={"name": "Chat User", "email": "chat@example.com"}).json()
+    user = register_user({"name": "Chat User", "email": "chat@example.com"})
     client.post(
         "/api/lab-results",
         json={
@@ -80,14 +90,14 @@ def test_lab_and_health_chat():
 
 
 def test_fhir_endpoint():
-    user = client.post("/api/users", json={"name": "FHIR User", "email": "fhir@example.com"}).json()
+    user = register_user({"name": "FHIR User", "email": "fhir@example.com"})
     response = client.get(f"/api/fhir/patient/{user['id']}")
     assert response.status_code == 200
     assert response.json()["resourceType"] == "Patient"
 
 
 def test_abdm_mock():
-    user = client.post("/api/users", json={"name": "ABDM User", "email": "abdm@example.com"}).json()
+    user = register_user({"name": "ABDM User", "email": "abdm@example.com"})
     response = client.get(f"/api/abdm/mock/{user['id']}")
     assert response.status_code == 200
     assert "ABDM / ABHA MOCK DEMO" in response.json()["label"]

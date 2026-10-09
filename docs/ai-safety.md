@@ -12,4 +12,4 @@ This is a development-stage health information tool, not medical care, diagnosis
 
 When OmniRoute is enabled, relevant user-entered health text or images are sent to the configured provider. Configure consent, privacy notices, retention controls, and a provider whose terms meet the deployment's requirements before processing personal data.
 
-The API does not currently authenticate users or enforce record ownership. Do not process real patient data or expose this application publicly until security and privacy controls have been implemented and reviewed.
+The API now requires an authenticated session for private routes and scopes ORM reads and writes to the authenticated account. These application changes do not constitute an independent security/privacy review or provide account recovery, email verification, rate limiting, audit controls, or encryption-at-rest. Do not process real patient data until these remaining safeguards and applicable privacy requirements have been reviewed.

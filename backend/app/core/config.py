@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,6 +7,8 @@ class Settings(BaseSettings):
     omniroute_base_url: str = "https://api.omniroute.ai/v1"
     omniroute_api_key: str = ""
     omniroute_model: str = "gpt-4o-mini"
+    auth_secret_key: str = ""
+    auth_token_expire_minutes: int = Field(default=720, ge=1, le=1440)
     allowed_origins: str = "http://localhost:5173,https://aihealthcopilot.onrender.com"
     app_env: str = "development"
     max_upload_size: int = 10 * 1024 * 1024

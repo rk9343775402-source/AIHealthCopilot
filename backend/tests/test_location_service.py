@@ -1,6 +1,7 @@
 import errno
 import socket
 import ssl
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -283,7 +284,17 @@ def test_nearby_care_endpoint_keeps_existing_502_response(monkeypatch):
         raise LocationSearchError("Nearby healthcare search is temporarily unavailable.")
 
     monkeypatch.setattr(emergency.LocationService, "nearby_care", fail_lookup)
-    response = TestClient(app).get(
+    client = TestClient(app)
+    account = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Fictional Nearby Test",
+            "email": f"nearby-{uuid4().hex}@example.com",
+            "password": "fictional-nearby-test-password-123",
+        },
+    )
+    assert account.status_code == 201
+    response = client.get(
         "/api/nearby-care?latitude=37.7749&longitude=-122.4194"
     )
 

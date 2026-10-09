@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.api.routes.auth import SESSION_COOKIE, router as auth_router
 from app.api.routes.abdm import router as abdm_router
 from app.api.routes.animal_bites import router as animal_bites_router
 from app.api.routes.doctor_visits import router as doctor_visits_router
@@ -22,8 +24,9 @@ from app.api.routes.users import router as users_router
 from app.api.routes.wellbeing import router as wellbeing_router
 from app.core.config import settings
 from app.database.base import Base
-from app.database.session import SessionLocal, engine
+from app.database.session import OwnershipViolation, SessionLocal, engine
 from app.seeds.demo_data import seed_demo_data
+from app.security import authenticated_user_id, get_token_user_id
 
 
 @asynccontextmanager
@@ -44,6 +47,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def authenticate_api_requests(request: Request, call_next):
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    origin = request.headers.get("origin")
+    allowed_origins = {
+        configured.strip().rstrip("/")
+        for configured in settings.allowed_origins.split(",")
+        if configured.strip()
+    }
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and origin and origin.rstrip("/") not in allowed_origins:
+        return JSONResponse(status_code=403, content={"detail": "Request origin is not allowed."})
+
+    public_paths = {"/api/auth/register", "/api/auth/login"}
+    user_id = None
+    if request.url.path not in public_paths:
+        user_id = get_token_user_id(request.cookies.get(SESSION_COOKIE, ""))
+        if user_id is None:
+            return JSONResponse(status_code=401, content={"detail": "Authentication required."})
+        request.state.authenticated_user_id = user_id
+
+    token = authenticated_user_id.set(user_id)
+    try:
+        return await call_next(request)
+    finally:
+        authenticated_user_id.reset(token)
+
+
+@app.exception_handler(OwnershipViolation)
+async def handle_ownership_violation(_request: Request, _exc: OwnershipViolation):
+    return JSONResponse(status_code=404, content={"detail": "Resource not found."})
+
+
+app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(medical_documents_router)
 app.include_router(lab_results_router)

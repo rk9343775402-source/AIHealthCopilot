@@ -35,6 +35,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .user-switch { border: 1px solid var(--line); border-radius: 12px; padding: 11px; margin: 0 4px 25px; background: #fbfdfc; }
 .user-switch label { display: block; color: #99a7a6; font-size: 9px; letter-spacing: 1.1px; font-weight: 700; margin-bottom: 4px; }
 .user-switch select { width: 100%; border: 0; background: transparent; color: #37565a; font-size: 12px; font-weight: 600; outline: none; padding: 3px 0; }
+.signed-in-name, .signed-in-email { display: block; overflow-wrap: anywhere; }
+.signed-in-name { color: #37565a; font-size: 12px; font-weight: 700; }
+.signed-in-email { color: #819593; font-size: 10px; }
+.logout-button { margin: 7px 0 0; padding: 0; }
 .nav { display: flex; flex-direction: column; gap: 20px; }
 .nav-group > p { margin: 0 11px 8px; color: #a1aeab; font-size: 9px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; }
 .nav-group { display: grid; gap: 3px; }
@@ -47,6 +51,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .status-dot { width: 7px; height: 7px; display: inline-block; flex: 0 0 auto; border-radius: 50%; background: #36a47b; box-shadow: 0 0 0 3px #e6f5ef; }
 .status-dot.neutral-dot { background: #93aaa5; box-shadow: 0 0 0 3px #edf3f1; }
 .api-host { margin-left: auto; color: #a0adaa; font-size: 9px; }
+.top-logout { min-height: 31px; padding: 0 10px; font-size: 10px; }
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 22px; background: #f5f8f6; }
+.auth-card { width: min(100%, 430px); padding: clamp(22px, 5vw, 34px); }
+.auth-brand { margin: 0 0 28px; padding: 0; }
+.auth-card h1 { margin: 0; color: #1b3c42; font: 700 24px "Manrope", sans-serif; }
+.auth-description { margin: 7px 0 20px; color: #7c8e90; font-size: 11px; }
+.auth-form { display: grid; gap: 14px; }
+.auth-submit { width: 100%; min-height: 43px; margin-top: 4px; }
+.auth-mode-toggle { margin: 18px 0 0; padding: 0; }
 
 .main-panel { min-width: 0; flex: 1; }
 .topbar { height: 70px; border-bottom: 1px solid #e9efed; display: flex; justify-content: space-between; align-items: center; padding: 0 clamp(24px, 4vw, 59px); background: rgba(255,255,255,.68); }
@@ -189,6 +202,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .emergency-callout .card-kicker { color: #b46b50; }
 .emergency-callout h2 { color: #664a3d; font: 700 16px "Manrope"; margin: 0 0 5px; }
 .emergency-callout p:last-child { max-width: 800px; color: #987a6d; font-size: 10px; margin: 0; line-height: 1.65; }
+.sos-test-screen { display: grid; gap: 16px; }
+.sos-test-warning, .sos-location-message { align-items: flex-start; }
+.sos-test-warning > strong, .sos-location-message > strong { white-space: normal; }
+.sos-test-intro { margin: 0 0 17px; color: #6f8584; font-size: 11px; line-height: 1.7; }
+.sos-test-callout { align-items: flex-start; }
+.sos-test-callout h2 { margin-top: 0; }
+.sos-test-callout p:not(.card-kicker) { color: #8c756a; font-size: 11px; line-height: 1.7; }
+.sos-test-button { min-height: 46px; padding: 0 20px; color: #fff; background: #a45640; font-size: 12px; }
+.sos-test-button:hover { background: #884632; }
+.sos-incident-status { align-items: flex-start; flex-direction: column; margin: 16px 0 0; }
+.sos-location-result { display: grid; gap: 15px; margin-top: 17px; }
+.sos-location-result dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 0; }
+.sos-location-result dl > div { min-width: 0; padding: 11px; border: 1px solid #edf2ef; border-radius: 9px; background: #fbfdfc; }
+.sos-location-result dt { color: #899a98; font-size: 9px; }
+.sos-location-result dd { margin: 3px 0 0; color: #35575b; font-size: 11px; overflow-wrap: anywhere; }
 
 .chat-layout { display: grid; grid-template-columns: .8fr 1.2fr; gap: 16px; }
 .chat-intro { min-height: 270px; padding: 27px; border-radius: 14px; color: #f4fffa; background: linear-gradient(140deg,#287d71,#499787); }
@@ -231,6 +259,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .profile-section { min-width: 0; }
 .profile-section .record-card { margin: 7px 0; }
 .settings-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; align-items: start; }
+.settings-account { display: grid; justify-items: start; gap: 7px; color: #526f6d; font-size: 11px; }
+.settings-account > strong { color: #35575b; font-size: 14px; }
+.settings-account > span { color: #839795; overflow-wrap: anywhere; }
 .settings-user-row { display: flex; align-items: flex-end; gap: 12px; }
 .settings-user-row .field { flex: 1; }
 .divider { height: 1px; background: #edf2f0; margin: 20px 0; }
@@ -278,6 +309,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .connection-pill { font-size: 0; padding: 7px; }
   .connection-pill .status-dot { margin: 0; }
   .top-actions { gap: 10px; }
+  .top-logout { padding: 0 8px; font-size: 9px; }
   .page-content { padding: 23px 14px 16px; }
   .page-heading { align-items: flex-start; margin-bottom: 18px; }
   .page-heading h1 { font-size: 24px; }
@@ -297,6 +329,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .profile-sections { grid-template-columns: 1fr; }
   .profile-identity dl, .evidence-card dl { grid-template-columns: 1fr; }
   .surface, .form-panel { padding: 16px; }
+  .sos-location-result dl { grid-template-columns: 1fr; }
   .emergency-mini { padding: 17px; }
   .fields-grid { gap: 11px 8px; }
   .field { font-size: 9px; }

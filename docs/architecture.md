@@ -20,4 +20,4 @@ AI-assisted explanations send only the feature's required prompt material to the
 
 ## Current production blockers
 
-The scaffold currently has no authentication, authorization, ownership enforcement, audit trail, encryption-at-rest controls, or versioned database migrations. Do not deploy it with real patient data or as a public service until these controls are implemented and reviewed.
+The backend now authenticates accounts with Argon2 password hashes and signed, expiring HttpOnly cookies. Private ORM reads and writes are scoped to the verified account; frontend logout clears account-specific state. Independent security review, account recovery/email verification, rate limiting, audit trail, encryption-at-rest controls, and a general versioned migration system are not provided. Existing profiles require a reviewed additive schema migration and a separate verified identity-linking process before their owners can sign in.
