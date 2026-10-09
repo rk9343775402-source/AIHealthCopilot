@@ -81,4 +81,25 @@ Automated backend tests configure an isolated in-memory SQLite database only ins
 - Tesseract with English/Hindi language data for local image OCR; the Docker image installs both languages.
 - Public Overpass API access for nearby-care searches.
 
+### Temporary Overpass connectivity diagnostic
+
+The OpenStreetMap wiki's [Public Overpass API instances list](https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances)
+documents the VK Maps public API endpoint:
+`https://maps.mail.ru/osm/tools/overpass/api/interpreter`.
+To compare outbound HTTPS connectivity from the backend's own Render environment,
+deploy the diagnostic module and run this once in that backend service's Render
+Shell:
+
+```sh
+python -m app.diagnostics.overpass_connectivity
+```
+
+It checks DNS and sends the same tiny fixed `[out:json];out count;` query to
+the configured production endpoint and the documented mirror. It does not use
+user coordinates or health data, read response bodies, or change the production
+lookup. Its output is limited to the host, DNS category, connection outcome,
+HTTP status, and sanitized exception class/errno. This is a manual diagnostic,
+not an API route; run it only when needed. A result from a local machine does not
+establish connectivity from Render.
+
 If OmniRoute is unconfigured, AI features return cautious unavailable responses; they do not invent medical records, lab values, medicines, diagnoses, or summaries.
