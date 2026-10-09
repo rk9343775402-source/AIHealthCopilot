@@ -338,21 +338,10 @@ function EmergencyTools({ userId }) {
   };
 
   const findNearby = () => {
-    setError(""); setNotice(""); setPlaces([]);
-    if (!navigator.geolocation) { setError("This browser does not provide location access."); return; }
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      const point = { latitude: position.coords.latitude, longitude: position.coords.longitude };
-      setLocation(point);
-      setBusy(true);
-      try {
-        const response = await api(`/api/nearby-care?latitude=${point.latitude}&longitude=${point.longitude}`);
-        setPlaces(asList(response));
-        setNotice(response.notice || "Healthcare locations loaded.");
-      } catch (e) { setError(e.message); }
-      finally { setBusy(false); }
-    }, (geoError) => {
-      setError(geoError.code === 1 ? "Location permission was denied. You can still call local emergency services." : "The device could not provide a location.");
-    }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
+    setError("");
+    setNotice("Update Coming Soon");
+    setPlaces([]);
+    setLocation(null);
   };
 
   const prepareShare = async () => {
@@ -383,7 +372,7 @@ function EmergencyTools({ userId }) {
 
   return <div className="emergency-tools">
     {error && <div className="alert error-alert" role="alert">{error}</div>}
-    {notice && <div className="alert info-alert" role="status">{notice}</div>}
+    {notice && <div className="alert info-alert" role="status">{notice === "Update Coming Soon" ? <><strong>Update Coming Soon</strong><span>Nearby healthcare services will be available in a future update.</span></> : notice}</div>}
     <section className="surface">
       <SectionHead title="Emergency guidance" subtitle="General first-aid and warning information; not a substitute for dispatch or clinical advice." />
       {guidance ? <>
@@ -394,8 +383,8 @@ function EmergencyTools({ userId }) {
       </> : <Loading />}
     </section>
     <section className="surface">
-      <SectionHead title="Nearby healthcare" subtitle="Your device asks for location only when you press the button. Lookup uses OpenStreetMap." />
-      <button className="button secondary" type="button" onClick={findNearby} disabled={busy}>{busy ? "Searching…" : "Use my location to find care"}</button>
+      <SectionHead title="Nearby healthcare" subtitle="Nearby healthcare services are temporarily unavailable." />
+      <button className="button secondary" type="button" onClick={findNearby}>Use my location to find care</button>
       {places.length > 0 && <div className="record-list">{places.map((place, index) => <article className="record-card" key={`${place.latitude}-${place.longitude}-${index}`}>
         <div className="record-head"><strong>{place.name}</strong><span>{place.distance_km} km</span></div>
         <p>{place.type}{place.address ? ` · ${place.address}` : ""}</p>
