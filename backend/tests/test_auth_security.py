@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
+from app.api.routes import auth as auth_routes
 from app.database.base import Base
 from app.database.session import _TENANT_MODELS
 from app.main import app, fastapi_app
@@ -51,6 +52,31 @@ def test_every_user_owned_orm_model_is_tenant_scoped():
     assert user_owned_models <= scoped_models
 
 
+def test_registration_and_login_require_a_32_byte_auth_secret(monkeypatch):
+    for secret in ("", "x" * 31):
+        monkeypatch.setattr(auth_routes.settings, "auth_secret_key", secret)
+        with TestClient(app) as client:
+            register_response = client.post(
+                "/api/auth/register",
+                json={
+                    "name": "Fictional Configuration Test",
+                    "email": f"missing-secret-{uuid4().hex}@example.com",
+                    "password": PASSWORD_A,
+                },
+            )
+            login_response = client.post(
+                "/api/auth/login",
+                json={
+                    "email": "fictional@example.com",
+                    "password": PASSWORD_A,
+                },
+            )
+
+        for response in (register_response, login_response):
+            assert response.status_code == 503
+            assert response.json()["detail"] == "Authentication is not configured."
+
+
 def test_registration_login_and_profile_responses_never_return_credentials():
     with TestClient(app) as client:
         password = "fictional-auth-test-password-789"
@@ -87,6 +113,39 @@ def test_registration_login_and_profile_responses_never_return_credentials():
         assert "password_hash" not in login.text
         assert password not in login.text
         assert "token" not in login.json()
+
+
+def test_production_cookie_supports_cross_origin_session_validation(monkeypatch):
+    monkeypatch.setattr(auth_routes.settings, "app_env", "production")
+    origin = "https://aihealthcopilot.onrender.com"
+    with TestClient(
+        app,
+        base_url="https://ai-health-copilot-backend.onrender.com",
+    ) as client:
+        registration = client.post(
+            "/api/auth/register",
+            headers={"Origin": origin},
+            json={
+                "name": "Fictional Production Cookie Test",
+                "email": f"cookie-{uuid4().hex}@example.com",
+                "password": "fictional-production-cookie-password",
+            },
+        )
+        assert registration.status_code == 201
+        cookie_header = registration.headers["set-cookie"].lower()
+        assert "httponly" in cookie_header
+        assert "secure" in cookie_header
+        assert "samesite=none" in cookie_header
+        assert "path=/" in cookie_header
+        assert f"max-age={auth_routes.settings.auth_token_expire_minutes * 60}" in cookie_header
+
+        session = client.get("/api/auth/me", headers={"Origin": origin})
+        assert session.status_code == 200
+        assert session.json()["user"]["email"] == registration.json()["user"]["email"]
+
+        logout = client.post("/api/auth/logout", headers={"Origin": origin})
+        assert logout.status_code == 204
+        assert client.get("/api/auth/me", headers={"Origin": origin}).status_code == 401
 
 
 def test_two_accounts_cannot_read_or_modify_each_others_records():

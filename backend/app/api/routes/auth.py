@@ -12,6 +12,16 @@ router = APIRouter(prefix="/api/auth", tags=["authentication"])
 SESSION_COOKIE = "carecompass_session"
 
 
+def _session_cookie_options() -> dict[str, bool | str]:
+    secure = settings.app_env.strip().casefold() != "development"
+    return {
+        "httponly": True,
+        "secure": secure,
+        "samesite": "none" if secure else "lax",
+        "path": "/",
+    }
+
+
 def _require_auth_configuration() -> None:
     if len(settings.auth_secret_key.encode("utf-8")) < 32:
         raise HTTPException(status_code=503, detail="Authentication is not configured.")
@@ -25,11 +35,8 @@ def _set_session_cookie(response: Response, user_id: int) -> None:
     response.set_cookie(
         key=SESSION_COOKIE,
         value=token,
-        httponly=True,
-        secure=settings.app_env.casefold() != "development",
-        samesite="none" if settings.app_env.casefold() == "production" else "lax",
         max_age=settings.auth_token_expire_minutes * 60,
-        path="/",
+        **_session_cookie_options(),
     )
 
 
@@ -91,8 +98,5 @@ def current_session(request: Request):
 def logout(response: Response):
     response.delete_cookie(
         key=SESSION_COOKIE,
-        httponly=True,
-        secure=settings.app_env.casefold() != "development",
-        samesite="none" if settings.app_env.casefold() == "production" else "lax",
-        path="/",
+        **_session_cookie_options(),
     )
