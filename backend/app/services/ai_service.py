@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 from typing import Any
 
 import httpx
 
 from app.core.config import settings
 from app.services.ocr_service import OCRService
+
+logger = logging.getLogger(__name__)
 
 
 class AIServiceError(RuntimeError):
@@ -138,6 +142,28 @@ class AIService:
                     },
                 )
                 response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            error_code = "unavailable"
+            error_type = "unavailable"
+            try:
+                response_body = exc.response.json()
+                provider_error = response_body.get("error") if isinstance(response_body, dict) else None
+                if isinstance(provider_error, dict):
+                    code = provider_error.get("code")
+                    error = provider_error.get("type")
+                    if isinstance(code, str):
+                        error_code = re.sub(r"[^A-Za-z0-9_.-]", "", code[:128])[:64] or "unavailable"
+                    if isinstance(error, str):
+                        error_type = re.sub(r"[^A-Za-z0-9_.-]", "", error[:128])[:64] or "unavailable"
+            except (ValueError, UnicodeDecodeError):
+                pass
+            logger.warning(
+                "OmniRoute request failed: status=%s provider_error_code=%s provider_error_type=%s",
+                exc.response.status_code,
+                error_code,
+                error_type,
+            )
+            raise AIServiceError("The OmniRoute request failed. Check the service configuration and try again.") from exc
         except httpx.HTTPError as exc:
             raise AIServiceError("The OmniRoute request failed. Check the service configuration and try again.") from exc
 
