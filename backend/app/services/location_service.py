@@ -91,6 +91,7 @@ def _connect_error_details(
 
 class LocationService:
     OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+    OVERPASS_FALLBACK_URL = "https://gall.openstreetmap.de/api/interpreter"
 
     @staticmethod
     def _distance_km(latitude: float, longitude: float, other_lat: float, other_lon: float) -> float:
@@ -111,7 +112,20 @@ class LocationService:
         )
         try:
             async with httpx.AsyncClient(timeout=20.0, headers={"User-Agent": "AIHealthCopilot/1.0"}) as client:
-                response = await client.post(self.OVERPASS_URL, data={"data": query})
+                try:
+                    response = await client.post(self.OVERPASS_URL, data={"data": query})
+                except httpx.ConnectError as exc:
+                    _, _, _, safe_error, _ = _connect_error_details(exc)
+                    if safe_error != "tcp_connection_refused":
+                        raise
+                    logger.warning(
+                        "Primary Overpass endpoint refused TCP; retrying with fallback endpoint host=%s",
+                        "gall.openstreetmap.de",
+                    )
+                    response = await client.post(
+                        self.OVERPASS_FALLBACK_URL,
+                        data={"data": query},
+                    )
                 response.raise_for_status()
                 elements = response.json().get("elements", [])
         except (httpx.HTTPError, ValueError) as exc:

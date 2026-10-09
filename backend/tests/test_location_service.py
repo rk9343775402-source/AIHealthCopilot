@@ -25,6 +25,64 @@ class FailingAsyncClient:
         raise self.error
 
 
+class SequencedAsyncClient:
+    def __init__(self, results):
+        self.results = iter(results)
+        self.requests = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def post(self, url, **kwargs):
+        self.requests.append((url, kwargs))
+        result = next(self.results)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+
+@pytest.mark.asyncio
+async def test_nearby_care_retries_tcp_refusal_on_fallback_without_logging_coordinates(
+    monkeypatch, caplog
+):
+    primary_request = httpx.Request("POST", LocationService.OVERPASS_URL)
+    primary_error = httpx.ConnectError(
+        "sensitive request details",
+        request=primary_request,
+    )
+    primary_error.__cause__ = ConnectionRefusedError(
+        errno.ECONNREFUSED,
+        "sensitive socket details",
+    )
+    fallback_response = httpx.Response(
+        200,
+        request=httpx.Request("POST", LocationService.OVERPASS_FALLBACK_URL),
+        json={"elements": []},
+    )
+    client = SequencedAsyncClient([primary_error, fallback_response])
+    monkeypatch.setattr(
+        "app.services.location_service.httpx.AsyncClient",
+        lambda **_kwargs: client,
+    )
+
+    places = await LocationService().nearby_care(37.7749, -122.4194)
+
+    assert places == []
+    assert [url for url, _ in client.requests] == [
+        LocationService.OVERPASS_URL,
+        LocationService.OVERPASS_FALLBACK_URL,
+    ]
+    assert client.requests[0][1]["data"] == client.requests[1][1]["data"]
+    assert "Primary Overpass endpoint refused TCP" in caplog.text
+    assert "host=gall.openstreetmap.de" in caplog.text
+    assert "37.7749" not in caplog.text
+    assert "-122.4194" not in caplog.text
+    assert "sensitive" not in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_overpass_http_failure_logs_status_without_response_body(monkeypatch, caplog):
     request = httpx.Request("POST", LocationService.OVERPASS_URL)
