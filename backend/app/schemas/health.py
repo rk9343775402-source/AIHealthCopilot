@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
-
+from pydantic import BaseModel, EmailStr
 
 def validate_image_data_url(value: str | None) -> str | None:
     if value is None:
@@ -311,3 +311,11 @@ class WellbeingResponseRequest(BaseModel):
 class TranslationRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=4000)
     language: str = Field(..., pattern=r"^(en|hi)$")
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
