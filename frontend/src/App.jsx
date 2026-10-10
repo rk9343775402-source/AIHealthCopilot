@@ -821,7 +821,32 @@ const [resetSuccess, setResetSuccess] = useState("");
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   };
+const handleResetPassword = async (event) => {
+  event.preventDefault();
+  setSaving(true);
+  setError("");
+  setResetSuccess("");
 
+  try {
+    const result = await api("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: resetToken,
+        new_password: newPassword,
+      }),
+    });
+
+    setResetSuccess(
+      result.message || "Password reset successfully. You can now log in."
+    );
+    setNewPassword("");
+  } catch (err) {
+    setError(err.message || "Could not reset your password.");
+  } finally {
+    setSaving(false);
+  }
+};
   const docItems = asList(pageData);
   const setCurrentPage = (target) => { setNotice(""); setError(""); setPage(target); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const pageMeta = PAGE_META[page];
@@ -892,32 +917,7 @@ const [resetSuccess, setResetSuccess] = useState("");
     </main>
   );
 }
-    const handleResetPassword = async (event) => {
-  event.preventDefault();
-  setSaving(true);
-  setError("");
-  setResetSuccess("");
-
-  try {
-    const result = await api("/api/auth/reset-password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: resetToken,
-        new_password: newPassword,
-      }),
-    });
-
-    setResetSuccess(
-      result.message || "Password reset successfully. You can now log in."
-    );
-    setNewPassword("");
-  } catch (err) {
-    setError(err.message || "Could not reset your password.");
-  } finally {
-    setSaving(false);
-  }
-};
+     
     if (forgotPasswordMode) {
   return (
     <main className="auth-page">
