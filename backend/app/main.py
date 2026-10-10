@@ -54,7 +54,12 @@ async def authenticate_api_requests(request: Request, call_next):
     if request.method not in {"GET", "HEAD", "OPTIONS"} and origin and origin.rstrip("/") not in allowed_origins:
         return JSONResponse(status_code=403, content={"detail": "Request origin is not allowed."})
 
-    public_paths = {"/api/auth/register", "/api/auth/login"}
+    public_paths = {
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
+}
     user_id = None
     if request.url.path not in public_paths:
         user_id = get_token_user_id(request.cookies.get(SESSION_COOKIE, ""))
