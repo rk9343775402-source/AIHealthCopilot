@@ -491,6 +491,11 @@ function EmergencySOSTest() {
 
 export default function App() {
   const [page, setPage] = useState("Dashboard");
+  const [resetToken, setResetToken] = useState(
+  new URLSearchParams(window.location.search).get("token") || ""
+);
+const [newPassword, setNewPassword] = useState("");
+const [resetSuccess, setResetSuccess] = useState("");
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetMessage, setResetMessage] = useState("");
@@ -827,6 +832,92 @@ export default function App() {
   }
 
   if (!authUser) {
+    if (resetToken) {
+  return (
+    <main className="auth-page">
+      <section className="surface auth-card">
+        <h1>Reset Password</h1>
+        <p className="auth-description">
+          Enter a new password for your account.
+        </p>
+
+        {error && <div className="alert error-alert">{error}</div>}
+
+        {resetSuccess && (
+          <div className="alert success-alert" role="status">
+            {resetSuccess}
+          </div>
+        )}
+
+        {!resetSuccess && (
+          <form onSubmit={handleResetPassword} className="auth-form">
+            <label className="field">
+              <span>New password</span>
+              <input
+                type="password"
+                required
+                minLength={12}
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </label>
+
+            <button
+              className="button primary auth-submit"
+              type="submit"
+              disabled={saving}
+            >
+              {saving ? "Please wait…" : "Reset password"}
+            </button>
+          </form>
+        )}
+
+        {resetSuccess && (
+          <button
+            className="text-button auth-mode-toggle"
+            type="button"
+            onClick={() => {
+              window.history.replaceState({}, "", window.location.pathname);
+              setResetToken("");
+              setResetSuccess("");
+              setError("");
+              setForgotPasswordMode(false);
+            }}
+          >
+            Continue to sign in
+          </button>
+        )}
+      </section>
+    </main>
+  );
+}
+    const handleResetPassword = async (event) => {
+  event.preventDefault();
+  setSaving(true);
+  setError("");
+  setResetSuccess("");
+
+  try {
+    const result = await api("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: resetToken,
+        new_password: newPassword,
+      }),
+    });
+
+    setResetSuccess(
+      result.message || "Password reset successfully. You can now log in."
+    );
+    setNewPassword("");
+  } catch (err) {
+    setError(err.message || "Could not reset your password.");
+  } finally {
+    setSaving(false);
+  }
+};
     if (forgotPasswordMode) {
   return (
     <main className="auth-page">
