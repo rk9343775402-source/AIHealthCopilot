@@ -491,6 +491,9 @@ function EmergencySOSTest() {
 
 export default function App() {
   const [page, setPage] = useState("Dashboard");
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetMessage, setResetMessage] = useState("");
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState("login");
@@ -693,6 +696,28 @@ export default function App() {
       setSaving(false);
     }
   };
+  const handleForgotPassword = async (event) => {
+  event.preventDefault();
+  setSaving(true);
+  setError("");
+  setResetMessage("");
+
+  try {
+    const result = await api("/api/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: resetEmail }),
+    });
+
+    setResetMessage(
+      result.message || "If that email is registered, a reset link will be sent."
+    );
+  } catch (err) {
+    setError(err.message || "Could not request a password reset.");
+  } finally {
+    setSaving(false);
+  }
+};
 
   const logout = async () => {
     sessionEpoch.current += 1;
@@ -802,6 +827,57 @@ export default function App() {
   }
 
   if (!authUser) {
+    if (forgotPasswordMode) {
+  return (
+    <main className="auth-page">
+      <section className="surface auth-card">
+        <h1>Forgot Password?</h1>
+        <p className="auth-description">
+          Enter your email to receive a password reset link.
+        </p>
+
+        {error && <div className="alert error-alert">{error}</div>}
+        {resetMessage && (
+          <div className="alert success-alert" role="status">
+            {resetMessage}
+          </div>
+        )}
+
+        <form onSubmit={handleForgotPassword} className="auth-form">
+          <label className="field">
+            <span>Email</span>
+            <input
+              type="email"
+              required
+              value={resetEmail}
+              onChange={(event) => setResetEmail(event.target.value)}
+            />
+          </label>
+
+          <button
+            className="button primary auth-submit"
+            type="submit"
+            disabled={saving}
+          >
+            {saving ? "Please wait…" : "Send reset link"}
+          </button>
+        </form>
+
+        <button
+          className="text-button auth-mode-toggle"
+          type="button"
+          onClick={() => {
+            setForgotPasswordMode(false);
+            setError("");
+            setResetMessage("");
+          }}
+        >
+          Back to sign in
+        </button>
+      </section>
+    </main>
+  );
+}
     return <main className="auth-page">
       <section className="surface auth-card">
         <div className="brand auth-brand"><span className="brand-icon"><Icon name="Health Profile" /></span><span><strong>care<span>compass</span></strong><small>YOUR HEALTH, CONNECTED</small></span></div>
@@ -816,6 +892,20 @@ export default function App() {
           <label className="field"><span>Email</span><input type="email" autoComplete="email" maxLength="180" required value={authForm.email} onChange={(event) => setAuthForm((current) => ({ ...current, email: event.target.value }))} /></label>
           <label className="field"><span>Password{authMode === "register" && " (at least 12 characters)"}</span><input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"} minLength={authMode === "register" ? 12 : 1} maxLength="256" required value={authForm.password} onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))} /></label>
           <button className="button primary auth-submit" type="submit" disabled={saving}>{saving ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button>
+          {authMode === "login" && (
+  <button
+    className="text-button"
+    type="button"
+     onClick={() => {
+  setForgotPasswordMode(true);
+  setResetEmail(authForm.email);
+  setError("");
+  setResetMessage("");
+}}
+  >
+    Forgot Password?
+  </button>
+)}
         </form>
         <button className="text-button auth-mode-toggle" type="button" onClick={() => { setAuthMode(authMode === "register" ? "login" : "register"); setError(""); }}>
           {authMode === "register" ? "Already have an account? Sign in" : "New here? Create an account"}
