@@ -19,6 +19,7 @@ from app.models.health import (
     TrustedContact,
     User,
     Wellbeing,
+    PasswordResetToken,
 )
 
 

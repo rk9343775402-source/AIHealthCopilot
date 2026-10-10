@@ -1,13 +1,30 @@
-from fastapi import APIRouter, HTTPException, Request, Response, status
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+
+import resend
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.database.session import SessionLocal
-from app.models.health import User
-from app.schemas.health import AuthLogin, AuthRegister, UserOut
+from app.models.health import PasswordResetToken, User
+from app.schemas.health import (
+    AuthLogin,
+    AuthRegister,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    UserOut,
+)
 from app.security import create_access_token, hash_password, verify_password
-
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 SESSION_COOKIE = "carecompass_session"
 
@@ -99,3 +116,92 @@ def logout(response: Response):
         key=SESSION_COOKIE,
         **_session_cookie_options(),
     )
+
+def send_reset_email(email: str, reset_url: str) -> None:
+    resend.api_key = settings.resend_api_key
+
+    resend.Emails.send({
+        "from": "AI Health Copilot <onboarding@resend.dev>",
+        "to": [email],
+        "subject": "Reset your AI Health Copilot password",
+        "html": f"""
+            <h2>Password reset</h2>
+            <p>Click below to create a new password.</p>
+            <p><a href="{reset_url}">Reset my password</a></p>
+            <p>This link expires in 30 minutes.</p>
+        """,
+    })
+@router.post("/forgot-password")
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+):
+    email = payload.email.strip().casefold()
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(
+            func.lower(User.email) == email
+        ).first()
+
+        if user is not None:
+            token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+            reset_record = PasswordResetToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+            )
+            db.add(reset_record)
+            db.commit()
+
+            reset_url = (
+                f"{settings.frontend_url}/reset-password?token={token}"
+            )
+            background_tasks.add_task(
+                send_reset_email, email, reset_url
+            )
+
+    return {
+        "message": "If that email is registered, a password reset link will be sent."
+    }
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest):
+    if len(payload.new_password) < 12:
+        raise HTTPException(
+            status_code=422,
+            detail="Password must be at least 12 characters long.",
+        )
+
+    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
+
+    with SessionLocal() as db:
+        record = (
+            db.query(PasswordResetToken)
+            .filter(
+                PasswordResetToken.token_hash == token_hash,
+                PasswordResetToken.used.is_(False),
+                PasswordResetToken.expires_at > datetime.now(timezone.utc),
+            )
+            .first()
+        )
+
+        if record is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This reset link is invalid or expired.",
+            )
+
+        user = db.query(User).filter(User.id == record.user_id).first()
+        if user is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This reset link is invalid or expired.",
+            )
+
+        user.password_hash = hash_password(payload.new_password)
+        record.used = True
+        db.commit()
+
+    return {"message": "Password reset successfully. You can now log in."}

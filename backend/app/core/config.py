@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     demo_mode: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+    resend_api_key: str = ""
+    frontend_url: str = "https://aihealthcopilot.onrender.com"
 
 
 settings = Settings()
