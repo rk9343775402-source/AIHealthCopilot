@@ -13,11 +13,10 @@ SESSION_COOKIE = "carecompass_session"
 
 
 def _session_cookie_options() -> dict[str, bool | str]:
-    secure = settings.app_env.strip().casefold() != "development"
     return {
         "httponly": True,
-        "secure": secure,
-        "samesite": "none" if secure else "lax",
+        "secure": True,
+        "samesite": "none",
         "path": "/",
     }
 
